@@ -68,8 +68,8 @@ message Column {
   // table.
   string expr = 4 [ (sql_expression) = true ];
   // The data type of this column.
-  // TODO(nsehrawat): Consider creating an enum instead, with all snowflake
-  // support data types.
+  // TODO(nsehrawat): Consider creating an enum instead, with all ClickZetta-
+  // supported data types.
   string data_type = 5;
   // The kind of this column - dimension or fact, metric.
   ColumnKind kind = 6;
@@ -97,7 +97,7 @@ message Column {
 
 // Dimension columns contain categorical values (e.g. state, user_type,
 // platform). NOTE: If modifying this protobuf, make appropriate changes in
-// context_to_column_format() of snowpilot/semantic_context/protos/schema.py.
+// context_to_column_format() of clickzetta/semantic_context/protos/schema.py.
 message Dimension {
   // A descriptive name for this dimension.
   string name = 1 [ (id_field) = true ];
@@ -111,8 +111,8 @@ message Dimension {
   // physical table.
   string expr = 4 [ (sql_expression) = true ];
   // The data type of this dimension.
-  // TODO(nsehrawat): Consider creating an enum instead with all snowflake
-  // support data types.
+  // TODO(nsehrawat): Consider creating an enum instead with all ClickZetta-
+  // supported data types.
   string data_type = 5;
   // If true, assume that this dimension has unique values.
   bool unique = 6 [ (optional) = true ];
@@ -137,7 +137,7 @@ message CortexSearchService {
 
 // Time dimension columns contain time values (e.g. sale_date, created_at,
 // year). NOTE: If modifying this protobuf, make appropriate changes in
-// to_column_format() of snowpilot/semantic_context/utils/utils.py.
+// to_column_format() of clickzetta/semantic_context/utils/utils.py.
 message TimeDimension {
   // A descriptive name for this time dimension.
   string name = 1 [ (id_field) = true ];
@@ -151,8 +151,8 @@ message TimeDimension {
   // physical table.
   string expr = 4 [ (sql_expression) = true ];
   // The data type of this time dimension.
-  // TODO(nsehrawat): Consider creating an enum instead, with all snowflake
-  // support data types.
+  // TODO(nsehrawat): Consider creating an enum instead, with all ClickZetta-
+  // supported data types.
   string data_type = 5;
   // If true, assume that this time dimension has unique values.
   bool unique = 6 [ (optional) = true ];
@@ -162,7 +162,7 @@ message TimeDimension {
 
 // Measure columns contain numerical values (e.g. revenue, impressions, salary).
 // NOTE: If modifying this protobuf, make appropriate changes in
-// to_column_format() of snowpilot/semantic_context/utils/utils.py.
+// to_column_format() of clickzetta/semantic_context/utils/utils.py.
 message Fact {
   // A descriptive name for this measure.
   string name = 1 [ (id_field) = true ];
@@ -176,8 +176,8 @@ message Fact {
   // the underlying physical table.
   string expr = 4 [ (sql_expression) = true ];
   // The data type of this measure.
-  // TODO(nsehrawat): Consider creating an enum instead, with all snowflake
-  // support data types.
+  // TODO(nsehrawat): Consider creating an enum instead, with all ClickZetta-
+  // supported data types.
   string data_type = 5;
   // If no aggregation is specified, then this is the default aggregation
   // applied to this measure in contxt of a grouping.

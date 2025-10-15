@@ -1,0 +1,117 @@
+# YAML is balanced between human readability and precision. Business users can understand it while data engineers and analysts can define technical concepts clearly.
+# The general syntax of a Analyst semantic model is:
+
+# Name and description of the semantic model.
+name: <name>
+description: <string>
+comments: <string>
+
+# Logical table-level concepts
+
+# A semantic model can contain one or more logical tables.
+tables:
+
+  # A logical table on top of a base table.
+  - name: <name>
+    description: <string>
+
+
+    # The fully qualified name of the base table.
+    base_table:
+      database: <database>
+      schema: <schema>
+      table: <base table name>
+
+    # Dimension columns in the logical table.
+    dimensions:
+      - name: <name>
+        synonyms: <array of strings>
+        description: <string>
+
+        expr: <SQL expression>
+        data_type: <data type>
+        unique: <boolean>
+        cortex_search_service:
+          service: <string>
+          literal_column: <string>
+          database: <string>
+          schema: <string>
+        is_enum: <boolean>
+
+
+    # Time dimension columns in the logical table.
+    time_dimensions:
+      - name: <name>
+        synonyms:  <array of strings>
+        description: <string>
+
+        expr: <SQL expression>
+        data_type: <data type>
+        unique: <boolean>
+
+    # Fact columns in the logical table.
+    facts:
+      - name: <name>
+        synonyms: <array of strings>
+        description: <string>
+        access_modifier: < public_access | private_access >  # Default is public_access
+
+        expr: <SQL expression>
+        data_type: <data type>
+
+
+    # Regular metrics scoped to the logical table.
+    metrics:
+      - name: <name>
+        synonyms: <array of strings>
+        description: <string>
+        access_modifier: < public_access | private_access >  # Default is public_access
+
+        expr: <SQL expression>
+
+
+    # Commonly used filters over the logical table.
+    filters:
+      - name: <name>
+        synonyms: <array of strings>
+        description: <string>
+
+        expr: <SQL expression>
+
+# Model-level concepts
+
+# Relationships between logical tables
+relationships:
+  - name: <string>
+
+    left_table: <table>
+    right_table: <table>
+    relationship_columns:
+      - left_column: <column>
+        right_column: <column>
+      - left_column: <column>
+        right_column: <column>
+    join_type: <left_outer | inner>
+    relationship_type: < one_to_one | many_to_one >
+
+# Derived metrics scoped to the semantic model
+metrics:
+  - name: <name>
+    synonyms: <array of strings>
+    description: <string>
+    access_modifier: < public_access | private_access >  # Default is public_access
+
+    expr: <SQL expression>
+
+
+# Additional context concepts
+
+#  Verified queries with example questions and queries that answer them
+verified_queries:
+  - name:        # A descriptive name of the query.
+
+    question:    # The natural language question that this query answers.
+    verified_at: # Optional: Time (in seconds since the UNIX epoch, January 1, 1970) when the query was verified.
+    verified_by: # Optional: Name of the person who verified the query.
+    use_as_onboarding_question:  # Optional: Marks this question as an onboarding question for the end user.
+    sql:                         # The SQL query for answering the question

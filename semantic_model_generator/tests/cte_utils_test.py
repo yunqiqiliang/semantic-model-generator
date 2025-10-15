@@ -7,6 +7,7 @@ from semantic_model_generator.data_processing.cte_utils import (
     _enrich_column_in_expr_with_aggregation,
     _get_col_expr,
     _validate_col,
+    ClickzettaDialect,
     context_to_column_format,
     expand_all_logical_tables_as_ctes,
     generate_select,
@@ -448,8 +449,8 @@ class SemanticModelTest(TestCase):
 SELECT
   *
 FROM __t2"""
-        assert sqlglot.parse_one(want, "snowflake") == sqlglot.parse_one(
-            got, "snowflake"
+        assert sqlglot.parse_one(want, ClickzettaDialect) == sqlglot.parse_one(
+            got, ClickzettaDialect
         )
 
     def test_expand_all_logical_tables_as_ctes_with_column_renaming(self) -> None:
@@ -470,6 +471,6 @@ SELECT
   *
 FROM __t1
         """
-        assert sqlglot.parse_one(want, "snowflake") == sqlglot.parse_one(
-            got, "snowflake"
+        assert sqlglot.parse_one(want, ClickzettaDialect) == sqlglot.parse_one(
+            got, ClickzettaDialect
         )

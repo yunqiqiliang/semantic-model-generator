@@ -3,12 +3,12 @@ from typing import Optional
 import streamlit as st
 from streamlit_extras.row import row
 
-from app_utils.shared_utils import get_snowflake_connection
+from app_utils.shared_utils import get_clickzetta_connection
 from semantic_model_generator.data_processing.cte_utils import (
     fully_qualified_table_name,
 )
 from semantic_model_generator.protos import semantic_model_pb2
-from semantic_model_generator.snowflake_utils.snowflake_connector import (
+from semantic_model_generator.clickzetta_utils.clickzetta_connector import (
     get_table_primary_keys,
 )
 
@@ -233,21 +233,29 @@ def joins_dialog() -> None:
             )
 
             with st.spinner("Fetching primary keys..."):
+                connection = get_clickzetta_connection()
+                left_database = (left_table_object.base_table.database or "").upper()
+                left_schema = (left_table_object.base_table.schema or "").upper()
+                left_table = (left_table_object.base_table.table or "").upper()
+                right_database = (right_table_object.base_table.database or "").upper()
+                right_schema = (right_table_object.base_table.schema or "").upper()
+                right_table = (right_table_object.base_table.table or "").upper()
+
                 if not left_table_object.primary_key.columns:
                     primary_keys = get_table_primary_keys(
-                        get_snowflake_connection(),
-                        table_fqn=fully_qualified_table_name(
-                            left_table_object.base_table
-                        ),
+                        session=connection.session,
+                        workspace=left_database,
+                        schema_name=left_schema,
+                        table_name=left_table,
                     )
                     left_table_object.primary_key.columns.extend(primary_keys or [""])
 
                 if not right_table_object.primary_key.columns:
                     primary_keys = get_table_primary_keys(
-                        get_snowflake_connection(),
-                        table_fqn=fully_qualified_table_name(
-                            right_table_object.base_table
-                        ),
+                        session=connection.session,
+                        workspace=right_database,
+                        schema_name=right_schema,
+                        table_name=right_table,
                     )
                     right_table_object.primary_key.columns.extend(primary_keys or [""])
 

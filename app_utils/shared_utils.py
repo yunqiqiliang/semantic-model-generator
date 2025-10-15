@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import tempfile
@@ -7,30 +8,37 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from io import StringIO
-from typing import Any, Dict, List, Optional, Union
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Final
 
 import pandas as pd
 import streamlit as st
 from PIL import Image
-from snowflake.connector import ProgrammingError
-from snowflake.connector.connection import SnowflakeConnection
-from snowflake.snowpark import Session
+
+ProgrammingError = Exception
 
 from semantic_model_generator.data_processing.proto_utils import (
     proto_to_yaml,
     yaml_to_semantic_model,
 )
 from semantic_model_generator.generate_model import (
-    generate_model_str_from_snowflake,
+    generate_model_str_from_clickzetta,
     raw_schema_to_semantic_context,
 )
 from semantic_model_generator.protos import semantic_model_pb2
 from semantic_model_generator.protos.semantic_model_pb2 import Dimension, Table
-from semantic_model_generator.snowflake_utils.env_vars import (  # noqa: E402
+from semantic_model_generator.clickzetta_utils.env_vars import (  # noqa: E402
+    CLICKZETTA_INSTANCE,
+    CLICKZETTA_SERVICE,
+    CLICKZETTA_USERNAME,
+    CLICKZETTA_WORKSPACE,
+    CLICKZETTA_SCHEMA,
+    ACTIVE_CONFIG_PATH,
     assert_required_env_vars,
 )
-from semantic_model_generator.snowflake_utils.snowflake_connector import (
-    SnowflakeConnector,
+from semantic_model_generator.clickzetta_utils.clickzetta_connector import (
+    ClickzettaConnectionProxy,
+    ClickzettaConnector,
     fetch_databases,
     fetch_schemas_in_database,
     fetch_stages_in_schema,
@@ -39,27 +47,67 @@ from semantic_model_generator.snowflake_utils.snowflake_connector import (
     fetch_warehouses,
     fetch_yaml_names_in_stage,
 )
+from semantic_model_generator.llm import get_dashscope_settings
 
-SNOWFLAKE_ACCOUNT = os.environ.get("SNOWFLAKE_ACCOUNT_LOCATOR", "")
+ClickzettaConnection = ClickzettaConnectionProxy
 
-# Add a logo on the top-left corner of the app
-LOGO_URL_LARGE = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Snowflake_Logo.svg/2560px-Snowflake_Logo.svg.png"
-LOGO_URL_SMALL = (
-    "https://logos-world.net/wp-content/uploads/2022/11/Snowflake-Symbol.png"
-)
+CLICKZETTA_INSTANCE_ID = CLICKZETTA_INSTANCE or ""
+
+# Placeholder logos (update with official ClickZetta branding when available)
+LOGO_URL_LARGE: Final[str] = ""
+LOGO_URL_SMALL: Final[str] = ""
+_REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+_LOGO_PATH: Final[Path] = _REPO_ROOT / "images" / "logo.svg"
+
+
+@st.cache_data(show_spinner=False)
+def get_sidebar_logo_base64() -> str:
+    """
+    Returns a base64-encoded logo so sidebar headers can render without remote fetches.
+    """
+    try:
+        return base64.b64encode(_LOGO_PATH.read_bytes()).decode("utf-8")
+    except FileNotFoundError:
+        return ""
+
+
+def render_sidebar_title(
+    sidebar: st.delta_generator.DeltaGenerator,
+    *,
+    title: str = "ClickZetta Semantic Model Generator",
+    logo_width: int = 48,
+    margin_bottom: int = 24,
+) -> None:
+    """
+    Renders a consistent sidebar title block with the ClickZetta logo.
+    """
+    logo_b64 = get_sidebar_logo_base64()
+    if not logo_b64:
+        sidebar.header(title)
+        sidebar.markdown(
+            f"<div style='margin-bottom:{margin_bottom}px;'></div>",
+            unsafe_allow_html=True,
+        )
+        return
+    sidebar.markdown(
+        (
+            "<div style='display:flex; align-items:center; gap:12px;"
+            f" margin-bottom:{margin_bottom}px;'>"
+            f"<img src='data:image/svg+xml;base64,{logo_b64}' width='{logo_width}' style='display:block;'/>"
+            f"<span style='font-weight:600;font-size:18px;'>{title}</span>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_resource
-def get_connector() -> SnowflakeConnector:
+def get_connector() -> ClickzettaConnector:
     """
-    Instantiates a SnowflakeConnector using the provided credentials. This is mainly used to instantiate a
-    SnowflakeConnection which can execute queries.
-    Returns: SnowflakeConnector object
+    Instantiates a ClickZetta connector using the provided credentials.
+    Returns: ClickzettaConnector object
     """
-    return SnowflakeConnector(
-        account_name=SNOWFLAKE_ACCOUNT,
-        max_workers=1,
-    )
+    return ClickzettaConnector(max_workers=1)
 
 
 def set_streamlit_location() -> bool:
@@ -84,63 +132,32 @@ def env_setup_popup(missing_env_vars: list[str]) -> None:
     formatted_missing_env_vars = "\n".join(f"- **{s}**" for s in missing_env_vars)
     st.markdown(
         f"""Oops! It looks like the following required environment variables are missing: \n{formatted_missing_env_vars}\n\n
-Please follow the [setup instructions](https://github.com/Snowflake-Labs/semantic-model-generator?tab=readme-ov-file#setup) to properly configure your environment. Restart this app after you've set the required environment variables."""
+Please review the repository README for ClickZetta setup instructions and update your connection configuration accordingly. Restart this app after you've set the required environment variables."""
     )
     st.stop()
 
 
 @st.cache_resource(show_spinner=False)
-def get_snowflake_connection() -> SnowflakeConnection:
+def get_clickzetta_connection() -> ClickzettaConnectionProxy:
     """
-    Opens a general python connector connection to Snowflake.
-    Marked with st.cache_resource in order to reuse this connection across the app.
-    Returns: SnowflakeConnection
+    Opens a ClickZetta session proxy. Cached to reuse across the app.
     """
 
-    if st.session_state["sis"]:
-        # Import SiS-required modules
-        import sys
+    missing_env_vars = assert_required_env_vars()
+    if missing_env_vars:
+        env_setup_popup(missing_env_vars)
 
-        from snowflake.snowpark.context import get_active_session
-
-        # Non-Anaconda supported packages must be added to path to import from stage
-        addl_modules = [
-            "strictyaml.zip",
-            "looker_sdk.zip",
-        ]
-        sys.path.extend(addl_modules)
-        return get_active_session().connection
-    else:
-        # Rely on streamlit connection that is built on top of many ways to build snowflake connection
-        try:
-            return st.connection("snowflake").raw_connection
-        except Exception:
-            # Continue to support original implementation that relied on environment vars
-            missing_env_vars = assert_required_env_vars()
-            if missing_env_vars:
-                env_setup_popup(missing_env_vars)
-            else:
-                return get_connector().open_connection(db_name="")
+    return get_connector().open_connection()
 
 
 @st.cache_resource(show_spinner=False)
-def set_snowpark_session(_conn: Optional[SnowflakeConnection] = None) -> None:
+def set_clickzetta_session(_conn: Optional[ClickzettaConnectionProxy] = None) -> None:
     """
-    Creates a snowpark for python session.
-    Marked with st.cache_resource in order to reuse this connection across the app.
-    If the app is running in SiS, it will use the active session.
-    If the app is running locally with a python connector connection is available, it will create a new session.
-    Snowpark session necessary for upload/downloads in SiS.
-    Returns: Snowpark session
+    Stores the active ClickZetta session in Streamlit state for reuse.
     """
 
-    if st.session_state["sis"]:
-        from snowflake.snowpark.context import get_active_session
-
-        session = get_active_session()
-    else:
-        session = Session.builder.configs({"connection": _conn}).create()
-    st.session_state["session"] = session
+    conn = _conn or get_clickzetta_connection()
+    st.session_state["session"] = conn.session
 
 
 @st.cache_resource(show_spinner=False)
@@ -151,7 +168,7 @@ def get_available_tables(schema: str) -> list[str]:
     Returns: list of fully qualified table names
     """
 
-    return fetch_tables_views_in_schema(get_snowflake_connection(), schema)
+    return fetch_tables_views_in_schema(get_clickzetta_connection().session, schema)
 
 
 @st.cache_resource(show_spinner=False)
@@ -162,7 +179,7 @@ def get_available_schemas(db: str) -> list[str]:
     Returns: list of schema names
     """
 
-    return fetch_schemas_in_database(get_snowflake_connection(), db)
+    return fetch_schemas_in_database(get_clickzetta_connection().session, db)
 
 
 @st.cache_resource(show_spinner=False)
@@ -173,7 +190,7 @@ def get_available_databases() -> list[str]:
     Returns: list of database names
     """
 
-    return fetch_databases(get_snowflake_connection())
+    return fetch_databases(get_clickzetta_connection().session)
 
 
 @st.cache_resource(show_spinner=False)
@@ -184,23 +201,23 @@ def get_available_warehouses() -> list[str]:
     Returns: list of warehouse names
     """
 
-    return fetch_warehouses(get_snowflake_connection())
+    return fetch_warehouses(get_clickzetta_connection().session)
 
 
 @st.cache_resource(show_spinner=False)
 def get_available_stages(schema: str) -> List[str]:
     """
-    Fetches the available stages from the Snowflake account.
+    Fetches the available volumes (legacy stage support included) from the ClickZetta workspace.
 
     Returns:
-        List[str]: A list of available stages.
+        List[str]: A list of available volume identifiers.
     """
-    return fetch_stages_in_schema(get_snowflake_connection(), schema)
+    return fetch_stages_in_schema(get_clickzetta_connection(), schema)
 
 
 @st.cache_resource(show_spinner=False)
 def validate_table_schema(table: str, schema: Dict[str, str]) -> bool:
-    table_schema = fetch_table_schema(get_snowflake_connection(), table)
+    table_schema = fetch_table_schema(get_clickzetta_connection().session, table)
     # validate columns names
     if set(schema.keys()) != set(table_schema.keys()):
         return False
@@ -214,12 +231,12 @@ def validate_table_schema(table: str, schema: Dict[str, str]) -> bool:
 @st.cache_resource(show_spinner=False)
 def validate_table_exist(schema: str, table_name: str) -> bool:
     """
-    Validate table exist in the Snowflake account.
+    Validate table exists in the ClickZetta workspace.
 
     Returns:
-        List[str]: A list of available stages.
+        List[str]: A list of available volumes.
     """
-    table_names = fetch_tables_views_in_schema(get_snowflake_connection(), schema)
+    table_names = fetch_tables_views_in_schema(get_clickzetta_connection().session, schema)
     table_names = [table.split(".")[2] for table in table_names]
     if table_name.upper() in table_names:
         return True
@@ -257,7 +274,7 @@ def schema_selector_container(
         options=available_schemas,
         index=None,
         key=schema_selector["key"],
-        format_func=lambda x: format_snowflake_context(x, -1),
+        format_func=lambda x: format_workspace_context(x, -1),
     )
     if eval_schema:
         # When a valid schema is selected, fetch the available tables in that schema.
@@ -303,7 +320,7 @@ def table_selector_container(
         options=available_schemas,
         index=None,
         key=schema_selector["key"],
-        format_func=lambda x: format_snowflake_context(x, -1),
+        format_func=lambda x: format_workspace_context(x, -1),
     )
     if eval_schema:
         # When a valid schema is selected, fetch the available tables in that schema.
@@ -318,30 +335,60 @@ def table_selector_container(
         options=available_tables,
         index=None,
         key=table_selector["key"],
-        format_func=lambda x: format_snowflake_context(x, -1),
+        format_func=lambda x: format_workspace_context(x, -1),
     )
 
     return tables
 
 
-def stage_selector_container() -> Optional[List[str]]:
+def stage_selector_container() -> None:
     """
-    Common component that encapsulates db/schema/stage selection for the admin app.
-    When a db/schema/stage is selected, it is saved to the session state for reading elsewhere.
-    Returns: None
+    Common component that encapsulates db/schema/volume selection for the admin app.
+    When a target is selected, values are saved to the session state for reuse elsewhere.
     """
-    available_schemas = []
-    available_stages = []
 
-    # First, retrieve all databases that the user has access to.
+    previous_mode = st.session_state.get("selected_iteration_storage_mode", "user")
+    storage_mode = st.radio(
+        "Storage target",
+        ("user", "named"),
+        index=0 if previous_mode != "named" else 1,
+        format_func=lambda option: "User volume (recommended)"
+        if option == "user"
+        else "Named volume",
+        key="selected_iteration_storage_mode",
+    )
+
+    if storage_mode == "user":
+        default_dir = st.text_input(
+            "User volume directory",
+            value=st.session_state.get("selected_iteration_user_volume_dir", "semantic_models"),
+            help="Directory path inside your user volume (omit leading and trailing slashes).",
+        ).strip()
+
+        normalized_dir = default_dir.strip("/ ")
+        if not normalized_dir:
+            normalized_dir = "semantic_model"
+        volume_uri = "volume:user://~/"
+        if normalized_dir:
+            volume_uri = f"volume:user://~/{normalized_dir}/"
+
+        st.session_state["selected_iteration_user_volume_dir"] = normalized_dir
+        st.session_state["selected_iteration_database"] = "USER VOLUME"
+        st.session_state["selected_iteration_schema"] = normalized_dir or "~"
+        st.session_state["selected_iteration_stage"] = volume_uri
+        return
+
+    # Named volume flow (legacy stage selection retained for compatibility)
+    available_schemas: List[str] = []
+    available_stages: List[str] = []
+
     stage_database = st.selectbox(
-        "Stage database",
+        "Volume database",
         options=get_available_databases(),
         index=None,
         key="selected_iteration_database",
     )
     if stage_database:
-        # When a valid database is selected, fetch the available schemas in that database.
         try:
             available_schemas = get_available_schemas(stage_database)
         except (ValueError, ProgrammingError):
@@ -349,93 +396,78 @@ def stage_selector_container() -> Optional[List[str]]:
             st.stop()
 
     stage_schema = st.selectbox(
-        "Stage schema",
+        "Volume schema",
         options=available_schemas,
         index=None,
         key="selected_iteration_schema",
-        format_func=lambda x: format_snowflake_context(x, -1),
+        format_func=lambda x: format_workspace_context(x, -1),
     )
     if stage_schema:
-        # When a valid schema is selected, fetch the available stages in that schema.
         try:
             available_stages = get_available_stages(stage_schema)
         except (ValueError, ProgrammingError):
             st.error("Insufficient permissions to read from the selected schema.")
             st.stop()
 
-    files = st.selectbox(
-        "Stage name",
+    st.selectbox(
+        "Volume",
         options=available_stages,
         index=None,
         key="selected_iteration_stage",
-        format_func=lambda x: format_snowflake_context(x, -1),
+        format_func=lambda x: format_workspace_context(x, -1),
     )
-    return files
 
 
-@st.cache_resource(show_spinner=False)
 def get_yamls_from_stage(stage: str, include_yml: bool = False) -> List[str]:
     """
-    Fetches the YAML files from the specified stage.
+    Fetches the YAML files from the specified volume.
 
     Args:
-        stage (str): The name of the stage to fetch the YAML files from.
+        stage (str): The volume identifier used to locate YAML files.
         include_yml: If True, will look for .yaml and .yml. If False, just .yaml. Defaults to False.
 
     Returns:
-        List[str]: A list of YAML files in the specified stage.
+        List[str]: A list of YAML files in the specified storage target.
     """
-    return fetch_yaml_names_in_stage(get_snowflake_connection(), stage, include_yml)
+    return fetch_yaml_names_in_stage(get_clickzetta_connection(), stage, include_yml)
 
 
 def set_account_name(
-    conn: SnowflakeConnection, SNOWFLAKE_ACCOUNT: Optional[str] = None
+    conn: ClickzettaConnectionProxy, instance_name: Optional[str] = None
 ) -> None:
     """
-    Sets account_name in st.session_state.
-    Used to consolidate from various connection methods.
+    Sets account_name in st.session_state using ClickZetta instance information.
     """
-    # SNOWFLAKE_ACCOUNT may be specified from user's environment variables
-    # This will not be the case for connections.toml so need to set it ourselves
-    if not SNOWFLAKE_ACCOUNT:
-        SNOWFLAKE_ACCOUNT = (
-            conn.cursor().execute("SELECT CURRENT_ACCOUNT()").fetchone()[0]
-        )
-    st.session_state["account_name"] = SNOWFLAKE_ACCOUNT
+
+    resolved = instance_name or conn.config.get("instance") or CLICKZETTA_INSTANCE_ID
+    st.session_state["account_name"] = resolved
 
 
 def set_host_name(
-    conn: SnowflakeConnection, SNOWFLAKE_HOST: Optional[str] = None
+    conn: ClickzettaConnectionProxy, service_host: Optional[str] = None
 ) -> None:
     """
     Sets host_name in st.session_state.
     Used to consolidate from various connection methods.
     Value only necessary for open-source implementation.
     """
-    if st.session_state["sis"]:
-        st.session_state["host_name"] = ""
-    else:
-        # SNOWFLAKE_HOST may be specified from user's environment variables
-        # This will not be the case for connections.toml so need to set it ourselves
-        if not SNOWFLAKE_HOST:
-            SNOWFLAKE_HOST = conn.host
-        st.session_state["host_name"] = SNOWFLAKE_HOST
+    host_value = service_host or conn.host or CLICKZETTA_SERVICE or ""
+    st.session_state["host_name"] = host_value
 
 
 def set_user_name(
-    conn: SnowflakeConnection, SNOWFLAKE_USER: Optional[str] = None
+    conn: ClickzettaConnectionProxy, clickzetta_user: Optional[str] = None
 ) -> None:
     """
     Sets user_name in st.session_state.
     Used to consolidate from various connection methods.
     """
-    if st.session_state["sis"]:
+    if st.session_state.get("sis"):
         st.session_state["user_name"] = st.experimental_user.user_name
-    # SNOWFLAKE_USER may be specified from user's environment variables
-    # This will not be the case for connections.toml so need to set it ourselves
-    if not SNOWFLAKE_USER:
-        SNOWFLAKE_USER = conn.cursor().execute("SELECT CURRENT_USER()").fetchone()[0]
-    st.session_state["user_name"] = SNOWFLAKE_USER
+        return
+
+    resolved_user = clickzetta_user or conn.config.get("username") or CLICKZETTA_USERNAME or ""
+    st.session_state["user_name"] = resolved_user
 
 
 class GeneratorAppScreen(str, Enum):
@@ -449,16 +481,16 @@ class GeneratorAppScreen(str, Enum):
     ITERATION = "iteration"
 
 
-def return_home_button() -> None:
-    if st.button("Return to Home"):
+def return_home_button(container=st) -> None:
+    if container.button("Return to Home"):
         st.session_state["page"] = GeneratorAppScreen.ONBOARDING
         # Reset environment variables related to the semantic model, so that builder/iteration flows can start fresh.
         if "semantic_model" in st.session_state:
             del st.session_state["semantic_model"]
         if "yaml" in st.session_state:
             del st.session_state["yaml"]
-        if "snowflake_stage" in st.session_state:
-            del st.session_state["snowflake_stage"]
+        if "storage_target" in st.session_state:
+            del st.session_state["storage_target"]
         st.rerun()
 
 
@@ -1014,7 +1046,7 @@ def add_new_table() -> None:
                         f"{table.base_table.database}.{table.base_table.schema}.{table.base_table.table}"
                     ],
                     semantic_model_name="foo",  # A placeholder name that's not used anywhere.
-                    conn=get_snowflake_connection(),
+                    conn=get_clickzetta_connection(),
                 )
             except Exception as ex:
                 st.error(f"Error adding table: {ex}")
@@ -1111,6 +1143,7 @@ def show_yaml_in_dialog() -> None:
 def upload_yaml(file_name: str) -> None:
     """util to upload the semantic model."""
     yaml = proto_to_yaml(st.session_state.semantic_model)
+    conn = get_clickzetta_connection()
 
     with tempfile.TemporaryDirectory() as temp_dir:
         tmp_file_path = os.path.join(temp_dir, f"{file_name}.yaml")
@@ -1118,25 +1151,36 @@ def upload_yaml(file_name: str) -> None:
         with open(tmp_file_path, "w", encoding="utf-8") as temp_file:
             temp_file.write(yaml)
 
-        st.session_state.session.file.put(
+        destination_uri = st.session_state.storage_target.target_uri(
+            f"{file_name}.yaml"
+        )
+        conn.session.file.put(
             tmp_file_path,
-            f"@{st.session_state.snowflake_stage.stage_name}",
+            destination_uri,
             auto_compress=False,
             overwrite=True,
         )
 
 
-def validate_and_upload_tmp_yaml(conn: SnowflakeConnection) -> None:
+def delete_yaml(file_name: str, stage: StorageTarget) -> None:
+    """Remove a semantic model YAML from the specified storage target."""
+
+    conn = get_clickzetta_connection()
+    target_uri = stage.target_uri(file_name)
+    conn.session.file.delete(target_uri)
+
+
+def validate_and_upload_tmp_yaml(conn: ClickzettaConnectionProxy) -> None:
     """
     Validate the semantic model.
-    If successfully validated, upload a temp file into stage, to allow chatting and adding VQR against it.
+    If successfully validated, upload a temp file into the working volume, to allow chatting and adding VQR against it.
     """
     from semantic_model_generator.validate_model import validate
 
     yaml_str = proto_to_yaml(st.session_state.semantic_model)
     try:
-        # whenever valid, upload to temp stage path.
-        validate(yaml_str, SNOWFLAKE_ACCOUNT, conn)
+        # whenever valid, upload to temp volume path.
+        validate(yaml_str, conn)
         # upload_yaml(_TMP_FILE_NAME)
         st.session_state.validated = True
         update_last_validated_model()
@@ -1157,7 +1201,7 @@ def semantic_model_exists() -> bool:
 
 
 def stage_exists() -> bool:
-    return "snowflake_stage" in st.session_state
+    return "storage_target" in st.session_state
 
 
 def model_is_validated() -> bool:
@@ -1166,12 +1210,14 @@ def model_is_validated() -> bool:
     return False
 
 
-def download_yaml(file_name: str, stage_name: str) -> str:
-    """util to download a semantic YAML from a stage."""
+def download_yaml(file_name: str, stage: StorageTarget) -> str:
+    """util to download a semantic YAML from a stage or volume."""
+    conn = get_clickzetta_connection()
 
     with tempfile.TemporaryDirectory() as temp_dir:
         # Downloads the YAML to {temp_dir}/{file_name}.
-        st.session_state.session.file.get(f"@{stage_name}/{file_name}", temp_dir)
+        source_uri = stage.target_uri(file_name)
+        conn.session.file.get(source_uri, temp_dir)
 
         tmp_file_path = os.path.join(temp_dir, f"{file_name}")
         with open(tmp_file_path, "r", encoding="utf-8") as temp_file:
@@ -1198,26 +1244,23 @@ def get_sit_query_tag(
 
 
 def set_sit_query_tag(
-    conn: SnowflakeConnection,
+    conn: ClickzettaConnectionProxy,
     vendor: Optional[str] = None,
     action: Optional[str] = None,
 ) -> None:
     """
-    Sets query tag on a single zero-compute ping for tracking.
-    Only used if the app is running in the OSS environment.
+    Placeholder for query tagging; ClickZetta currently does not expose this
+    functionality, so this is a no-op.
 
     Returns: None
     """
-    if not st.session_state["sis"]:
-        query_tag = get_sit_query_tag(vendor, action)
-
-        conn.cursor().execute(f"alter session set query_tag='{query_tag}'")
-        conn.cursor().execute("SELECT 'SKIMANTICS';")
-        conn.cursor().execute("alter session set query_tag=''")
+    _ = conn
+    _ = vendor
+    _ = action
 
 
 def set_table_comment(
-    conn: SnowflakeConnection,
+    conn: ClickzettaConnectionProxy,
     tablename: str,
     comment: str,
     table_type: Optional[str] = None,
@@ -1241,9 +1284,9 @@ def render_image(image_file: str, size: tuple[int, int]) -> None:
     st.image(new_image)
 
 
-def format_snowflake_context(context: str, index: Optional[int] = None) -> str:
+def format_workspace_context(context: str, index: Optional[int] = None) -> str:
     """
-    Extracts the desired part of the Snowflake context.
+    Extracts the desired part of a fully qualified ClickZetta identifier.
     """
     if index and "." in context:
         split_context = context.split(".")
@@ -1275,22 +1318,14 @@ def check_valid_session_state_values(vars: list[str]) -> bool:
 
 
 def run_cortex_complete(
-    conn: SnowflakeConnection,
+    conn: ClickzettaConnection,
     model: str,
     prompt: str,
     prompt_args: Optional[dict[str, Any]] = None,
 ) -> str | None:
-
-    if prompt_args:
-        prompt = prompt.format(**prompt_args).replace("'", "\\'")
-    complete_sql = f"SELECT snowflake.cortex.complete('{model}', '{prompt}')"
-    response = conn.cursor().execute(complete_sql)
-
-    if response:
-        output: str = response.fetchone()[0]  # type: ignore
-        return output
-    else:
-        return None
+    _ = (conn, model, prompt, prompt_args)
+    st.info("Cortex completion is not available in the ClickZetta environment.")
+    return None
 
 
 def input_semantic_file_name() -> str:
@@ -1323,18 +1358,19 @@ def input_sample_value_num() -> int:
     return sample_values
 
 
-def run_generate_model_str_from_snowflake(
+def run_generate_model_str_from_clickzetta(
     model_name: str,
     sample_values: int,
     base_tables: list[str],
-    allow_joins: Optional[bool] = False,
+    allow_joins: Optional[bool] = True,
+    enrich_with_llm: bool = False,
 ) -> None:
     """
-    Runs generate_model_str_from_snowflake to generate cortex semantic shell.
+    Runs generate_model_str_from_clickzetta to generate the semantic shell.
     Args:
         model_name (str): Semantic file name (without .yaml suffix).
         sample_values (int): Number of sample values to provide for each table in generation.
-        base_tables (list[str]): List of fully-qualified Snowflake tables to include in the semantic model.
+        base_tables (list[str]): List of fully-qualified ClickZetta tables to include in the semantic model.
 
     Returns: None
     """
@@ -1344,13 +1380,15 @@ def run_generate_model_str_from_snowflake(
     elif not base_tables:
         raise ValueError("Please select at least one table to proceed.")
     else:
-        with st.spinner("Generating model. This may take a minute or two..."):
-            yaml_str = generate_model_str_from_snowflake(
+        with st.spinner("Generating model. This may take minutes ..."):
+            connection = get_clickzetta_connection()
+            yaml_str = generate_model_str_from_clickzetta(
                 base_tables=base_tables,
                 semantic_model_name=model_name,
                 n_sample_values=sample_values,  # type: ignore
-                conn=get_snowflake_connection(),
+                conn=connection.session,
                 allow_joins=allow_joins,
+                enrich_with_llm=enrich_with_llm,
             )
 
             st.session_state["yaml"] = yaml_str
@@ -1364,27 +1402,100 @@ class AppMetadata:
     """
 
     @property
-    def user(self) -> Optional[str]:
-        return os.getenv("SNOWFLAKE_USER")
+    def user(self) -> str:
+        return st.session_state.get("user_name") or CLICKZETTA_USERNAME or "Unknown"
 
     @property
-    def stage(self) -> Optional[str]:
+    def volume(self) -> str:
         if stage_exists():
-            stage = st.session_state.snowflake_stage
-            return f"{stage.stage_database}.{stage.stage_schema}.{stage.stage_name}"
-        return None
+            storage = st.session_state.storage_target
+            if storage.is_volume:
+                return storage.stage_name
+            return f"{storage.stage_database}.{storage.stage_schema}.{storage.stage_name}"
+        # Fallback to selected iteration volume if available.
+        selected = st.session_state.get("selected_iteration_stage")
+        if isinstance(selected, str) and selected.strip():
+            return selected.strip()
+        return "volume:user://~/semantic_models/"
 
     @property
-    def model(self) -> Optional[str]:
+    def model(self) -> str:
         if semantic_model_exists():
             return st.session_state.semantic_model.name  # type: ignore
-        return None
+        file_name = st.session_state.get("file_name")
+        if isinstance(file_name, str) and file_name.strip():
+            return file_name.strip()
+        return "Not loaded"
 
-    def to_dict(self) -> dict[str, Union[str, None]]:
+    @property
+    def instance(self) -> str:
+        return (
+            st.session_state.get("account_name")
+            or CLICKZETTA_INSTANCE or ""
+        )
+
+    @property
+    def service(self) -> str:
+        return (
+            st.session_state.get("host_name")
+            or CLICKZETTA_SERVICE
+            or ""
+        )
+
+    @property
+    def workspace(self) -> str:
+        return (
+            st.session_state.get("workspace_name")
+            or CLICKZETTA_WORKSPACE
+            or ""
+        )
+
+    @property
+    def schema(self) -> str:
+        return (
+            st.session_state.get("schema_name")
+            or CLICKZETTA_SCHEMA
+            or ""
+        )
+
+    @property
+    def config_path(self) -> str:
+        return ACTIVE_CONFIG_PATH or "Not found"
+
+    def llm_model(self) -> str:
+        settings = get_dashscope_settings()
+        return settings.model if settings else "Not configured"
+
+    def llm_base_url(self) -> str:
+        settings = get_dashscope_settings()
+        if settings and settings.base_url:
+            return settings.base_url
+        return "Default"
+
+    def to_dict(self) -> dict[str, str]:
         return {
             "User": self.user,
-            "Stage": self.stage,
-            "Model": self.model,
+            "Volume": self.volume,
+            "Semantic Model": self.model,
+        }
+
+    def connection_dict(self) -> dict[str, str]:
+        return {
+            "Instance": self.instance or "Unknown",
+            "Service": self.service or "Unknown",
+            "Workspace": self.workspace or "Unknown",
+            "Schema": self.schema or "Unknown",
+        }
+
+    def llm_dict(self) -> dict[str, str]:
+        settings = get_dashscope_settings()
+        effective_model = "qwen-plus-latest"
+        base_url = "Default"
+        if settings and settings.base_url:
+            base_url = settings.base_url
+        return {
+            "Model": effective_model,
+            "Base URL": base_url,
         }
 
     def show_as_dataframe(self) -> None:
@@ -1397,14 +1508,27 @@ class AppMetadata:
 
 
 @dataclass
-class SnowflakeStage:
+class StorageTarget:
     stage_database: str
     stage_schema: str
     stage_name: str
 
+    @property
+    def is_volume(self) -> bool:
+        return self.stage_name.startswith("volume:")
+
+    def target_uri(self, file_name: str) -> str:
+        if self.is_volume:
+            base = self.stage_name.rstrip("/")
+            separator = "" if base.endswith("/") else "/"
+            return f"{base}{separator}{file_name}"
+        return f"@{self.stage_name}/{file_name}"
+
     def to_dict(self) -> dict[str, str]:
+        if self.is_volume:
+            return {"Volume": self.stage_name}
         return {
             "Database": self.stage_database,
             "Schema": self.stage_schema,
-            "Stage": self.stage_name,
+            "Volume": self.stage_name,
         }

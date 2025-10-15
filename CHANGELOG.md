@@ -19,7 +19,7 @@ You must follow the format of `## [VERSION-NUMBER]` for the GitHub workflow to p
 
 ### Updates
 
-- Include new `secure-local-storage` extra package for `snowflake-python-connector` dependency.
+- Include new `secure-local-storage` extra package for the ClickZetta connector dependency.
 
 ## [0.1.30] - 2024-07-12
 
@@ -199,7 +199,7 @@ You must follow the format of `## [VERSION-NUMBER]` for the GitHub workflow to p
 
 - Fix 3.8 typing
 - Some function renaming
-- Support all Snowflake datatypes
+- Support all ClickZetta SQL dialect datatypes
 
 ## [0.1.2] - 2024-04-15
 

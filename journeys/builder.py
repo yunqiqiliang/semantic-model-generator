@@ -1,17 +1,18 @@
 import streamlit as st
 from loguru import logger
-from snowflake.connector import ProgrammingError
 
 from app_utils.shared_utils import (
     GeneratorAppScreen,
-    format_snowflake_context,
+    ProgrammingError,
+    format_workspace_context,
     get_available_databases,
     get_available_schemas,
     get_available_tables,
     input_sample_value_num,
     input_semantic_file_name,
-    run_generate_model_str_from_snowflake,
+    run_generate_model_str_from_clickzetta,
 )
+from semantic_model_generator.llm import is_llm_available
 
 
 def update_schemas_and_tables() -> None:
@@ -55,10 +56,11 @@ def update_tables() -> None:
     for schema in schemas:
         try:
             tables.extend(get_available_tables(schema))
-        except ProgrammingError:
-            logger.info(
-                f"Insufficient permissions to read from schema {schema}, skipping"
+        except ProgrammingError as exc:
+            logger.warning(
+                "Unable to list tables for {}: {}", schema, exc
             )
+    logger.debug("Collected {} objects across schemas {}", len(tables), schemas)
     st.session_state["available_tables"] = tables
 
     # Enforce that the previously selected tables are still valid
@@ -104,7 +106,7 @@ def table_selector_dialog() -> None:
         placeholder="Select the schemas that contain the tables you'd like to include in your semantic model.",
         on_change=update_tables,
         key="selected_schemas",
-        format_func=lambda x: format_snowflake_context(x, -1),
+        format_func=lambda x: format_workspace_context(x, -1),
     )
 
     st.multiselect(
@@ -112,25 +114,47 @@ def table_selector_dialog() -> None:
         options=st.session_state.get("available_tables", []),
         placeholder="Select the tables you'd like to include in your semantic model.",
         key="selected_tables",
-        format_func=lambda x: format_snowflake_context(x, -1),
+        format_func=lambda x: format_workspace_context(x, -1),
     )
 
     st.markdown("<div style='margin: 240px;'></div>", unsafe_allow_html=True)
     experimental_features = st.checkbox(
         "Enable joins (optional)",
-        help="Checking this box will enable you to add/edit join paths in your semantic model. If enabling this setting, please ensure that you have the proper parameters set on your Snowflake account. Reach out to your account team for access.",
+        help="Checking this box will enable you to add/edit join paths in your semantic model. If enabling this setting, please ensure that the required ClickZetta parameters are enabled for your workspace. Reach out to your account team for access.",
+        value=True,
     )
 
     st.session_state["experimental_features"] = experimental_features
 
+    llm_available = is_llm_available()
+    llm_help = (
+        "When enabled, DashScope will suggest business-friendly aliases, expand table and column descriptions, "
+        "and generate starter questions to accelerate review."
+    )
+    if not llm_available:
+        llm_help = (
+            f"{llm_help} Configure DashScope credentials in your ClickZetta connection first."
+        )
+
+    llm_enrichment = st.checkbox(
+        "Use DashScope to enrich semantic metadata",
+        help=llm_help,
+        value=llm_available,
+        disabled=not llm_available,
+    )
+    if not llm_available:
+        llm_enrichment = False
+    st.session_state["llm_enrichment"] = llm_enrichment
+
     submit = st.button("Submit", use_container_width=True, type="primary")
     if submit:
         try:
-            run_generate_model_str_from_snowflake(
+            run_generate_model_str_from_clickzetta(
                 model_name,
                 sample_values,
                 st.session_state["selected_tables"],
                 allow_joins=experimental_features,
+                enrich_with_llm=llm_enrichment,
             )
             st.session_state["page"] = GeneratorAppScreen.ITERATION
             st.rerun()

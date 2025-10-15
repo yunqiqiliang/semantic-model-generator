@@ -3,11 +3,11 @@ from typing import Any, Optional, Union
 import pandas as pd
 import streamlit as st
 import yaml
-from snowflake.connector import ProgrammingError
-
 from app_utils.shared_utils import (
+    ProgrammingError,
+    StorageTarget,
     download_yaml,
-    get_snowflake_connection,
+    get_clickzetta_connection,
     get_yamls_from_stage,
     set_sit_query_tag,
     stage_selector_container,
@@ -18,24 +18,24 @@ DBT_IMAGE = "images/dbt-signature_tm_black.png"
 DBT_MODEL_INSTRUCTIONS = """
 ### [SQL Model](https://docs.getdbt.com/docs/build/sql-models)
 
-Materialize your SQL model(s) as Snowflake table(s) and generate a Cortex Analyst semantic file for them directly.
+Materialize your SQL model(s) as ClickZetta tables and generate a semantic file for them directly.
 > Steps:
-> 1) Update dbt model(s) to be [materialized](https://docs.getdbt.com/docs/build/materializations) in Snowflake.
+> 1) Update dbt model(s) to be [materialized](https://docs.getdbt.com/docs/build/materializations) in ClickZetta (or a compatible warehouse).
 > 2) Update dbt model(s) to [persist docs](https://docs.getdbt.com/reference/resource-configs/persist_docs) to capture table/column descriptions.
-> 3) Run dbt model(s) to materialize in Snowflake.
-> 4) Select **🛠 Create a new semantic model** on the homepage and select the materialized Snowflake table(s).
+> 3) Run dbt model(s) to materialize in ClickZetta.
+> 4) Select **🛠 Create a new semantic model** on the homepage and select the materialized ClickZetta table(s).
 """
 DBT_SEMANTIC_INSTRUCTIONS = """
 ### [Semantic Model](https://docs.getdbt.com/docs/build/semantic-models)
 
 We extract metadata from your dbt semantic yaml file(s) and merge it with a generated Cortex Analyst semantic file.
 
-**Note**: The DBT semantic layer must be sourced from tables/views in Snowflake.
-If using Streamlit in Snowflake, upload dbt semantic (yaml/yml) file(s) to Snowflake stage first.
+**Note**: The dbt semantic layer must be sourced from tables or views that are accessible in ClickZetta.
+If you are running this app within ClickZetta, upload semantic (yaml/yml) file(s) to a ClickZetta volume first.
 
 > Steps:
-> 1) Select your dbt semantic (yaml/yml) file(s) below from stage or upload directly if not using Streamlit in Snowflake.
-> 2) Select **🛠 Create a new semantic model** to generate a new Cortex Analyst semantic file for Snowflake tables or **✏️ Edit an existing semantic model**.
+> 1) Select your dbt semantic (yaml/yml) file(s) below from the chosen volume/stage, or upload directly when running locally.
+> 2) Select **🛠 Create a new semantic model** to generate a new Cortex Analyst semantic file for ClickZetta tables or **✏️ Edit an existing semantic model**.
 > 3) Validate the output in the UI.
 > 4) Once you've validated the semantic file, click **Partner Semantic** to merge DBT and Cortex Analyst semantic files.
 """
@@ -62,14 +62,28 @@ def upload_dbt_semantic() -> None:
                     include_yml=True,
                 )
             except (ValueError, ProgrammingError):
-                st.error("Insufficient permissions to read from the selected stage.")
+                st.error("Insufficient permissions to read from the selected storage target.")
                 st.stop()
 
-        stage_files = st.multiselect("Staged files", options=available_files)
+        stage_files = st.multiselect("Volume/stage files", options=available_files)
         if stage_files:
             for staged_file in stage_files:
+                stage_obj = st.session_state.get("storage_target")
+                if not stage_obj:
+                    stage_obj = StorageTarget(
+                        stage_database=st.session_state.get(
+                            "selected_iteration_database", ""
+                        ),
+                        stage_schema=st.session_state.get(
+                            "selected_iteration_schema", ""
+                        ),
+                        stage_name=st.session_state.get(
+                            "selected_iteration_stage", ""
+                        ),
+                    )
                 file_content = download_yaml(
-                    staged_file, st.session_state["selected_iteration_stage"]
+                    staged_file,
+                    stage_obj,
                 )
                 uploaded_files.append(file_content)
     else:
@@ -91,7 +105,7 @@ def upload_dbt_semantic() -> None:
         if st.button("Continue", type="primary"):
             st.session_state["partner_setup"] = True
             set_sit_query_tag(
-                get_snowflake_connection(),
+                get_clickzetta_connection(),
                 vendor="dbt",
                 action="setup_complete",
             )

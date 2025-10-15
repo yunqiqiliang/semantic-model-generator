@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#f8fafc"/>
+  
+  <text x="800" y="80" font-family="Arial" font-size="48" font-weight="bold" fill="#1e293b" text-anchor="middle">ClickZetta Semantic Model</text>
+  <text x="800" y="130" font-family="Arial" font-size="24" fill="#64748b" text-anchor="middle">Standard, Open Semantic Layer for Enterprise Data</text>
+  
+  <g id="data-sources">
+    <rect x="50" y="200" width="450" height="600" rx="15" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="275" y="240" font-family="Arial" font-size="28" font-weight="bold" fill="#0f172a" text-anchor="middle">Data Sources</text>
+    
+    <rect x="100" y="280" width="350" height="100" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+    <text x="275" y="310" font-family="Arial" font-size="20" font-weight="bold" fill="#1e40af" text-anchor="middle">ClickZetta Lakehouse</text>
+    <text x="275" y="335" font-family="Arial" font-size="14" fill="#3b82f6" text-anchor="middle">Tables • Views • Streams</text>
+    <text x="275" y="355" font-family="Arial" font-size="14" fill="#3b82f6" text-anchor="middle">Dynamic Tables • Volumes</text>
+    
+    <rect x="100" y="400" width="350" height="80" rx="10" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+    <text x="275" y="445" font-family="Arial" font-size="20" fill="#166534" text-anchor="middle">External Catalogs</text>
+    <text x="275" y="465" font-family="Arial" font-size="14" fill="#22c55e" text-anchor="middle">Hive • Iceberg • Delta</text>
+    
+    <rect x="100" y="500" width="350" height="80" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+    <text x="275" y="545" font-family="Arial" font-size="20" fill="#92400e" text-anchor="middle">Partner Systems</text>
+    <text x="275" y="565" font-family="Arial" font-size="14" fill="#f59e0b" text-anchor="middle">APIs • Integrations</text>
+    
+    <text x="275" y="640" font-family="Arial" font-size="18" fill="#64748b" text-anchor="middle">Raw Tables &amp; Schemas</text>
+  </g>
+  
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#64748b"/>
+    </marker>
+  </defs>
+  <path d="M 500 500 L 600 500" stroke="#64748b" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <g id="semantic-layer">
+    <rect x="600" y="200" width="400" height="600" rx="15" fill="#ffffff" stroke="#8b5cf6" stroke-width="3"/>
+    <text x="800" y="240" font-family="Arial" font-size="28" font-weight="bold" fill="#6d28d9" text-anchor="middle">Semantic Model</text>
+    
+    <rect x="650" y="280" width="300" height="100" rx="10" fill="#ede9fe" stroke="#8b5cf6" stroke-width="2"/>
+    <text x="800" y="315" font-family="Arial" font-size="22" font-weight="bold" fill="#6d28d9" text-anchor="middle">Dimensions</text>
+    <text x="800" y="345" font-family="Arial" font-size="16" fill="#7c3aed" text-anchor="middle">Customer, Product, Time</text>
+    <text x="800" y="365" font-family="Arial" font-size="16" fill="#7c3aed" text-anchor="middle">Location, Category...</text>
+    
+    <rect x="650" y="405" width="300" height="100" rx="10" fill="#fce7f3" stroke="#ec4899" stroke-width="2"/>
+    <text x="800" y="440" font-family="Arial" font-size="22" font-weight="bold" fill="#be185d" text-anchor="middle">Measures</text>
+    <text x="800" y="470" font-family="Arial" font-size="16" fill="#db2777" text-anchor="middle">Revenue, Cost, Profit</text>
+    <text x="800" y="490" font-family="Arial" font-size="16" fill="#db2777" text-anchor="middle">Count, Sum, Average...</text>
+    
+    <rect x="650" y="530" width="300" height="100" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+    <text x="800" y="565" font-family="Arial" font-size="22" font-weight="bold" fill="#1e40af" text-anchor="middle">Business Logic</text>
+    <text x="800" y="595" font-family="Arial" font-size="16" fill="#2563eb" text-anchor="middle">Filters, Relationships</text>
+    <text x="800" y="615" font-family="Arial" font-size="16" fill="#2563eb" text-anchor="middle">Verified Queries</text>
+    
+    <rect x="650" y="655" width="300" height="45" rx="8" fill="#10b981" opacity="0.15"/>
+    <text x="800" y="683" font-family="Arial" font-size="16" font-weight="bold" fill="#059669" text-anchor="middle">✓ Unified Data Definitions</text>
+  </g>
+  
+  <path d="M 1000 500 L 1100 500" stroke="#64748b" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <g id="llm-analytics">
+    <rect x="1100" y="200" width="450" height="600" rx="15" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="1325" y="240" font-family="Arial" font-size="28" font-weight="bold" fill="#0f172a" text-anchor="middle">LLM &amp; Analytics</text>
+    
+    <rect x="1150" y="280" width="350" height="120" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+    <text x="1325" y="320" font-family="Arial" font-size="22" font-weight="bold" fill="#92400e" text-anchor="middle">LLM Understanding</text>
+    <text x="1325" y="350" font-family="Arial" font-size="16" fill="#b45309" text-anchor="middle">✓ Better Data Context</text>
+    <text x="1325" y="375" font-family="Arial" font-size="16" fill="#b45309" text-anchor="middle">✓ Avoid Hallucinations</text>
+    
+    <rect x="1150" y="425" width="350" height="120" rx="10" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+    <text x="1325" y="465" font-family="Arial" font-size="22" font-weight="bold" fill="#166534" text-anchor="middle">Accurate Analysis</text>
+    <text x="1325" y="495" font-family="Arial" font-size="16" fill="#15803d" text-anchor="middle">✓ Consistent Results</text>
+    <text x="1325" y="520" font-family="Arial" font-size="16" fill="#15803d" text-anchor="middle">✓ Reliable Insights</text>
+    
+    <rect x="1150" y="570" width="350" height="120" rx="10" fill="#e0e7ff" stroke="#6366f1" stroke-width="2"/>
+    <text x="1325" y="610" font-family="Arial" font-size="22" font-weight="bold" fill="#3730a3" text-anchor="middle">Team Collaboration</text>
+    <text x="1325" y="640" font-family="Arial" font-size="16" fill="#4338ca" text-anchor="middle">✓ Data Teams</text>
+    <text x="1325" y="665" font-family="Arial" font-size="16" fill="#4338ca" text-anchor="middle">✓ Business Users</text>
+  </g>
+  
+  <g id="benefits">
+    <rect x="50" y="830" width="1500" height="50" rx="10" fill="#10b981" opacity="0.1"/>
+    <text x="800" y="862" font-family="Arial" font-size="20" font-weight="bold" fill="#059669" text-anchor="middle">Standardized Annotation • Unified Definitions • Enhanced LLM Accuracy • Enterprise-wide Consistency</text>
+  </g>
+</svg>

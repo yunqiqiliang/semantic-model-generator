@@ -9,7 +9,7 @@ import streamlit as st
 import yaml
 
 from app_utils.shared_utils import (
-    get_snowflake_connection,
+    get_clickzetta_connection,
     render_image,
     set_sit_query_tag,
 )
@@ -255,7 +255,7 @@ def integrate_partner_semantics() -> None:
     Where metadata is missing, the other semantic file will be checked."""
 
     INTEGRATE_HELP = (
-        """Merge the selected Snowflake and Partner tables' semantics together."""
+        """Merge the selected ClickZetta and partner tables' semantics together."""
     )
 
     SAVE_HELP = """Save the merges to the Cortex Analyst semantic model for validation and iteration."""
@@ -296,7 +296,7 @@ def integrate_partner_semantics() -> None:
         st.write("Select which logical tables/views to compare and merge.")
         c1, c2 = st.columns(2)
         with c1:
-            semantic_cortex_tbl: str = st.selectbox("Snowflake", cortex_tables)  # type: ignore
+            semantic_cortex_tbl: str = st.selectbox("ClickZetta", cortex_tables)  # type: ignore
         with c2:
             semantic_partner_tbl: str = st.selectbox("Partner", partner_tables)  # type: ignore
 
@@ -404,7 +404,7 @@ def integrate_partner_semantics() -> None:
 
         if merge_button:
             set_sit_query_tag(
-                get_snowflake_connection(),
+                get_clickzetta_connection(),
                 vendor=st.session_state["selected_partner"],
                 action="merge",
             )
@@ -431,7 +431,7 @@ def integrate_partner_semantics() -> None:
 
         if reset_button:
             set_sit_query_tag(
-                get_snowflake_connection(),
+                get_clickzetta_connection(),
                 vendor=st.session_state["selected_partner"],
                 action="integration_complete",
             )

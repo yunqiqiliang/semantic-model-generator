@@ -10,8 +10,8 @@ def partner_semantic_setup() -> None:
 
     st.write(
         """
-        Have an existing semantic layer in a partner tool that's integrated with Snowflake?
-        See the below instructions for integrating your partner semantic specs into Cortex Analyst's semantic file.
+        Have an existing semantic layer from a partner tool already mapped into ClickZetta?
+        See the steps below to merge those partner semantic specs into the generated ClickZetta semantic YAML.
         """
     )
     configure_partner_semantic()

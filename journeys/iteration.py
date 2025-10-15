@@ -5,25 +5,29 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import sqlglot
 import streamlit as st
-from snowflake.connector import ProgrammingError, SnowflakeConnection
 from streamlit import config
 from streamlit.delta_generator import DeltaGenerator
-from streamlit_extras.row import row
 from streamlit_extras.stylable_container import stylable_container
 
 from app_utils.chat import send_message
 from app_utils.shared_utils import (
     GeneratorAppScreen,
-    SnowflakeStage,
+    ProgrammingError,
+    ClickzettaConnection,
+    StorageTarget,
+    AppMetadata,
+    stage_exists,
     changed_from_last_validated_model,
     download_yaml,
-    get_snowflake_connection,
+    get_clickzetta_connection,
     get_yamls_from_stage,
     init_session_states,
     return_home_button,
     stage_selector_container,
     upload_yaml,
+    delete_yaml,
     validate_and_upload_tmp_yaml,
+    render_sidebar_title,
 )
 from journeys.evaluation import evaluation_mode_show
 from journeys.joins import joins_dialog
@@ -32,6 +36,7 @@ from semantic_model_generator.data_processing.cte_utils import (
     expand_all_logical_tables_as_ctes,
     logical_table_name,
     remove_ltable_cte,
+    ClickzettaDialect,
 )
 from semantic_model_generator.data_processing.proto_utils import (
     proto_to_yaml,
@@ -48,7 +53,7 @@ config.set_option("global.minCachedMessageSize", 500 * 1e6)
 @st.cache_data(show_spinner=False)
 def pretty_print_sql(sql: str) -> str:
     """
-    Pretty prints SQL using SQLGlot with an option to use the Snowflake dialect for syntax checks.
+    Pretty prints SQL using SQLGlot with the ClickZetta SQL dialect for syntax checks.
 
     Args:
     sql (str): SQL query string to be formatted.
@@ -57,14 +62,14 @@ def pretty_print_sql(sql: str) -> str:
     str: Formatted SQL string.
     """
     # Parse the SQL using SQLGlot
-    expression = sqlglot.parse_one(sql, dialect="snowflake")
+    expression = sqlglot.parse_one(sql, dialect=ClickzettaDialect)
 
     # Generate formatted SQL, specifying the dialect if necessary for specific syntax transformations
-    formatted_sql: str = expression.sql(dialect="snowflake", pretty=True)
+    formatted_sql: str = expression.sql(dialect=ClickzettaDialect, pretty=True)
     return formatted_sql
 
 
-def process_message(_conn: SnowflakeConnection, prompt: str) -> None:
+def process_message(_conn: ClickzettaConnection, prompt: str) -> None:
     """Processes a message and adds the response to the chat."""
     user_message = {"role": "user", "content": [{"type": "text", "text": prompt}]}
     st.session_state.messages.append(user_message)
@@ -98,6 +103,32 @@ def process_message(_conn: SnowflakeConnection, prompt: str) -> None:
                 st.session_state.messages.pop()
 
 
+def validate_yaml_content(content: str) -> bool:
+    """
+    Validate the provided YAML content and update session state accordingly.
+
+    Returns:
+        bool: True if validation succeeded, False otherwise.
+    """
+    if not content:
+        st.warning("There is no semantic model content to validate yet.")
+        return False
+
+    try:
+        validate(
+            content,
+            conn=get_clickzetta_connection(),
+        )
+        st.session_state["validated"] = True
+        st.session_state.semantic_model = yaml_to_semantic_model(content)
+        st.session_state.last_saved_yaml = content
+        return True
+    except Exception as e:
+        st.session_state["validated"] = False
+        exception_as_dialog(e)
+        return False
+
+
 def show_expr_for_ref(message_index: int) -> None:
     """Display the column name and expression as a dataframe, to help user write VQR against logical table/columns."""
     tbl_names = list(st.session_state.ctx_table_col_expr_dict.keys())
@@ -117,7 +148,7 @@ def show_expr_for_ref(message_index: int) -> None:
 
 @st.experimental_dialog("Edit", width="large")
 def edit_verified_query(
-    conn: SnowflakeConnection, sql: str, question: str, message_index: int
+    conn: ClickzettaConnection, sql: str, question: str, message_index: int
 ) -> None:
     """Allow user to correct generated SQL and add to verfied queries.
     Note: Verified queries needs to be against logical table/column."""
@@ -132,9 +163,16 @@ def edit_verified_query(
     st.markdown("")
     st.divider()
 
-    sql_without_cte = remove_ltable_cte(
-        sql, table_names=[t.name for t in st.session_state.semantic_model.tables]
-    )
+    try:
+        sql_without_cte = remove_ltable_cte(
+            sql, table_names=[t.name for t in st.session_state.semantic_model.tables]
+        )
+    except ValueError:
+        st.error(
+            "This query does not include the logical CTE that the validator expects. "
+            "Re-run the chat with the latest semantic model or regenerate the SQL before saving it as a verified query."
+        )
+        return
     st.markdown(
         "You can edit the SQL below. Make sure to use the `Column Name` column in the **Cheat sheet** above for tables/columns available."
     )
@@ -167,7 +205,7 @@ def edit_verified_query(
                         user_updated_sql, st.session_state.ctx
                     )
 
-                    connection = get_snowflake_connection()
+                    connection = get_clickzetta_connection()
                     st.session_state["successful_sql"] = False
                     df = pd.read_sql(sql_to_execute, connection)
                     st.code(user_updated_sql)
@@ -212,7 +250,7 @@ def add_verified_query(
     question: str, sql: str, is_onboarding_question: bool = False
 ) -> None:
     """Save verified question and SQL into an in-memory list with additional details."""
-    # Verified queries follow the Snowflake definitions.
+    # Verified queries follow the ClickZetta semantic definitions.
     verified_query = semantic_model_pb2.VerifiedQuery(
         name=question,
         question=question,
@@ -229,7 +267,7 @@ def add_verified_query(
 
 
 def display_content(
-    conn: SnowflakeConnection,
+    conn: ClickzettaConnection,
     content: List[Dict[str, Any]],
     request_id: Optional[str],
     message_index: Optional[int] = None,
@@ -307,8 +345,8 @@ def display_content(
         st.caption(f"Request ID: {request_id}")
 
 
-def chat_and_edit_vqr(_conn: SnowflakeConnection) -> None:
-    messages = st.container(height=600, border=False)
+def chat_and_edit_vqr(_conn: ClickzettaConnection) -> None:
+    messages = st.container(height=680, border=False)
 
     # Convert semantic model to column format to be backward compatible with some old utils.
     if "semantic_model" in st.session_state:
@@ -350,13 +388,14 @@ def chat_and_edit_vqr(_conn: SnowflakeConnection) -> None:
                     ),  # Safe get since user messages have no request IDs
                 )
 
+    is_validated = st.session_state.get("validated") is True
     chat_placeholder = (
         "What is your question?"
-        if st.session_state["validated"]
+        if is_validated
         else "Please validate your semantic model before chatting."
     )
     if user_input := st.chat_input(
-        chat_placeholder, disabled=not st.session_state["validated"]
+        chat_placeholder, disabled=not is_validated
     ):
         with messages:
             process_message(_conn=_conn, prompt=user_input)
@@ -374,26 +413,24 @@ def upload_dialog(content: str) -> None:
             with st.spinner(
                 "Your semantic model has changed since last validation. Re-validating before uploading..."
             ):
-                validate_and_upload_tmp_yaml(conn=get_snowflake_connection())
+                validate_and_upload_tmp_yaml(conn=get_clickzetta_connection())
 
         st.session_state.semantic_model = yaml_to_semantic_model(content)
-        with st.spinner(
-            f"Uploading @{st.session_state.snowflake_stage.stage_name}/{file_name}.yaml..."
-        ):
+        storage_target: StorageTarget = st.session_state.storage_target
+        destination_uri = storage_target.target_uri(f"{file_name}.yaml")
+        with st.spinner(f"Uploading {destination_uri}..."):
             upload_yaml(file_name)
-        st.success(
-            f"Uploaded @{st.session_state.snowflake_stage.stage_name}/{file_name}.yaml!"
-        )
+        st.success(f"Uploaded {destination_uri}!")
         st.session_state.last_saved_yaml = content
         time.sleep(1.5)
         st.rerun()
 
-    if "snowflake_stage" in st.session_state:
-        # When opening the iteration app directly, we collect stage information already when downloading the YAML.
+    if "storage_target" in st.session_state:
+        # When opening the iteration app directly, we collect volume information already when downloading the YAML.
         # We only need to ask for the new file name in this case.
         with st.form("upload_form_name_only"):
-            st.markdown("This will upload your YAML to the following Snowflake stage.")
-            st.write(st.session_state.snowflake_stage.to_dict())
+            st.markdown("This will upload your YAML to the following location.")
+            st.write(st.session_state.storage_target.to_dict())
             new_name = st.text_input(
                 key="upload_yaml_final_name",
                 label="Enter the file name to upload (omit .yaml suffix):",
@@ -402,7 +439,7 @@ def upload_dialog(content: str) -> None:
             if st.form_submit_button("Submit Upload"):
                 upload_handler(new_name)
     else:
-        # If coming from the builder flow, we need to ask the user for the exact stage path to upload to.
+        # If coming from the builder flow, we need to ask the user for the exact volume path to upload to.
         st.markdown("Please enter the destination of your YAML file.")
         stage_selector_container()
         new_name = st.text_input("File name (omit .yaml suffix)", value="")
@@ -417,7 +454,7 @@ def upload_dialog(content: str) -> None:
                 st.error("Please fill in all fields.")
                 return
 
-            st.session_state["snowflake_stage"] = SnowflakeStage(
+            st.session_state["storage_target"] = StorageTarget(
                 stage_database=st.session_state["selected_iteration_database"],
                 stage_schema=st.session_state["selected_iteration_schema"],
                 stage_name=st.session_state["selected_iteration_stage"],
@@ -453,6 +490,38 @@ def update_container(
     container.markdown(content)
 
 
+def render_metadata_sections(sidebar: st.delta_generator.DeltaGenerator) -> None:
+    """
+    Renders session metadata in the sidebar expander so onboarding
+    and iteration views can provide consistent context.
+    """
+
+    expander = sidebar.expander("Session & Configuration", expanded=False)
+    with expander:
+        metadata = AppMetadata()
+        expander.markdown("**Current Session**")
+        for label, value in metadata.to_dict().items():
+            expander.markdown(f"- **{label}:** `{value}`")
+
+        if st.session_state.get("storage_target"):
+            target: StorageTarget = st.session_state["storage_target"]
+            expander.markdown("**Storage Target**")
+            for label, value in target.to_dict().items():
+                expander.markdown(f"- **{label}:** `{value}`")
+
+        connection_info = metadata.connection_dict()
+        expander.markdown("**ClickZetta Connection**")
+        for label, value in connection_info.items():
+            expander.markdown(f"- **{label}:** `{value}`")
+        expander.markdown(f"- **Config File:** `{metadata.config_path}`")
+
+        llm_info = metadata.llm_dict()
+        expander.markdown("**LLM Model**")
+        for label, value in llm_info.items():
+            expander.markdown(f"- **{label}:** `{value}`")
+
+
+
 @st.experimental_dialog("Error", width="small")
 def exception_as_dialog(e: Exception) -> None:
     st.error(f"An error occurred: {e}")
@@ -483,82 +552,21 @@ def yaml_editor(yaml_str: str) -> None:
             label="yaml_editor",
             label_visibility="collapsed",
             value=yaml_str,
-            height=600,
+            height=680,
         )
     st.session_state.working_yml = content
     status_container_title = "**Edit**"
     status_container = st.empty()
 
-    def validate_and_update_session_state() -> None:
-        # Validate new content
-        try:
-            validate(
-                content,
-                conn=get_snowflake_connection(),
-            )
-            st.session_state["validated"] = True
-            update_container(status_container, "success", prefix=status_container_title)
-            st.session_state.semantic_model = yaml_to_semantic_model(content)
-            st.session_state.last_saved_yaml = content
-        except Exception as e:
-            st.session_state["validated"] = False
-            update_container(status_container, "failed", prefix=status_container_title)
-            exception_as_dialog(e)
-
-    button_row = row(5)
-    if button_row.button("Validate", use_container_width=True, help=VALIDATE_HELP):
-        # Validate new content
-        validate_and_update_session_state()
-
-        # Rerun the app if validation was successful.
-        # We shouldn't rerun if validation failed as the error popup would immediately dismiss.
-        # This must be done outside of the try/except because the generic Exception handling is catching the
-        # exception that st.rerun() properly raises to halt execution.
-        # This is fixed in later versions of Streamlit, but other refactors to the code are required to upgrade.
-        if st.session_state["validated"]:
-            st.rerun()
-
-    if content:
-        button_row.download_button(
-            label="Download",
-            data=content,
-            file_name="semantic_model.yaml",
-            mime="text/yaml",
-            use_container_width=True,
-            help=UPLOAD_HELP,
-        )
-
-    if button_row.button(
-        "Upload",
-        use_container_width=True,
-        help=UPLOAD_HELP,
-    ):
-        upload_dialog(content)
-    if st.session_state.get("partner_setup", False):
-        from partner.partner_utils import integrate_partner_semantics
-
-        if button_row.button(
-            "Integrate Partner",
-            use_container_width=True,
-            help=PARTNER_SEMANTIC_HELP,
-            disabled=not st.session_state["validated"],
-        ):
-            integrate_partner_semantics()
-
     if st.session_state.experimental_features:
-        # Preserve a session state variable that maintains whether the join dialog is open.
-        # This is necessary because the join dialog calls `st.rerun()` from within, which closes the modal
-        # unless its state is being tracked.
         if "join_dialog_open" not in st.session_state:
             st.session_state["join_dialog_open"] = False
-
-        if button_row.button(
-            "Join Editor",
-            use_container_width=True,
-        ):
-            with st.spinner("Validating your model..."):
-                validate_and_update_session_state()
-            st.session_state["join_dialog_open"] = True
+        if st.session_state.pop("open_join_editor", False):
+            with st.spinner("Validating your semantic model..."):
+                if validate_yaml_content(content):
+                    st.session_state["join_dialog_open"] = True
+                else:
+                    st.session_state["join_dialog_open"] = False
 
         if st.session_state["join_dialog_open"]:
             joins_dialog()
@@ -578,10 +586,13 @@ def set_up_requirements() -> None:
     Collects existing YAML location from the user so that we can download it.
     """
     st.markdown(
-        "Fill in the Snowflake stage details to download your existing YAML file."
+        "Provide the ClickZetta volume details to download your existing YAML file."
     )
 
     stage_selector_container()
+
+    if message := st.session_state.pop("iteration_delete_message", None):
+        st.success(message)
 
     # Based on the currently selected stage, show a dropdown of YAML files for the user to pick from.
     available_files = []
@@ -589,38 +600,75 @@ def set_up_requirements() -> None:
         "selected_iteration_stage" in st.session_state
         and st.session_state["selected_iteration_stage"]
     ):
-        # When a valid stage is selected, fetch the available YAML files in that stage.
+        # When a valid volume is selected, fetch the available YAML files in that location.
         try:
             available_files = get_yamls_from_stage(
                 st.session_state["selected_iteration_stage"]
             )
         except (ValueError, ProgrammingError):
-            st.error("Insufficient permissions to read from the selected stage.")
+            st.error("Insufficient permissions to read from the selected storage target.")
             st.stop()
 
-    file_name = st.selectbox("File name", options=available_files, index=None)
+    file_name = st.selectbox(
+        "File name",
+        options=available_files,
+        index=None,
+        key="iteration_selected_file",
+    )
 
     experimental_features = st.checkbox(
         "Enable joins (optional)",
-        help="Checking this box will enable you to add/edit join paths in your semantic model. If enabling this setting, please ensure that you have the proper parameters set on your Snowflake account. Reach out to your account team for access.",
+        value=True,
+        help="Checking this box will enable you to add/edit join paths in your semantic model. If enabling this setting, please ensure that you have the proper parameters set on your ClickZetta workspace.",
     )
 
-    if st.button(
-        "Submit",
-        disabled=not st.session_state["selected_iteration_database"]
+    action_disabled = (
+        not st.session_state["selected_iteration_database"]
         or not st.session_state["selected_iteration_schema"]
         or not st.session_state["selected_iteration_stage"]
-        or not file_name,
-    ):
-        st.session_state["snowflake_stage"] = SnowflakeStage(
-            stage_database=st.session_state["selected_iteration_database"],
-            stage_schema=st.session_state["selected_iteration_schema"],
-            stage_name=st.session_state["selected_iteration_stage"],
-        )
-        st.session_state["file_name"] = file_name
-        st.session_state["page"] = GeneratorAppScreen.ITERATION
-        st.session_state["experimental_features"] = experimental_features
-        st.rerun()
+        or not file_name
+    )
+
+    edit_col, delete_col = st.columns([3, 1])
+
+    with edit_col:
+        if st.button(
+            "Edit Semantic Model& Chat",
+            use_container_width=True,
+            disabled=action_disabled,
+        ):
+            storage_target = StorageTarget(
+                stage_database=st.session_state["selected_iteration_database"],
+                stage_schema=st.session_state["selected_iteration_schema"],
+                stage_name=st.session_state["selected_iteration_stage"],
+            )
+            st.session_state["storage_target"] = storage_target
+            st.session_state["file_name"] = file_name
+            st.session_state["page"] = GeneratorAppScreen.ITERATION
+            st.session_state["experimental_features"] = experimental_features
+            st.rerun()
+
+    with delete_col:
+        if st.button(
+            "Delete",
+            use_container_width=True,
+            disabled=action_disabled,
+            help="Remove the selected YAML from the chosen volume.",
+        ):
+            storage_target = StorageTarget(
+                stage_database=st.session_state["selected_iteration_database"],
+                stage_schema=st.session_state["selected_iteration_schema"],
+                stage_name=st.session_state["selected_iteration_stage"],
+            )
+            try:
+                with st.spinner(f"Deleting {file_name}..."):
+                    delete_yaml(file_name, storage_target)
+            except Exception as exc:
+                st.error(f"Failed to delete {file_name}: {exc}")
+            else:
+                st.session_state["iteration_delete_message"] = f"Deleted {file_name}."
+                st.session_state["iteration_selected_file"] = None
+                st.experimental_rerun()
 
 
 @st.experimental_dialog("Chat Settings", width="small")
@@ -650,46 +698,130 @@ def chat_settings_dialog() -> None:
 VALIDATE_HELP = """Save and validate changes to the active semantic model in this app. This is
 useful so you can then play with it in the chat panel on the right side."""
 
-DOWNLOAD_HELP = (
-    """Download the currently loaded semantic model to your local machine."""
-)
+DOWNLOAD_HELP = "Download the currently loaded semantic model YAML to your local machine."
 
-UPLOAD_HELP = """Upload the YAML to the Snowflake stage. You want to do that whenever
+UPLOAD_HELP = """Upload the YAML to the selected ClickZetta volume. You want to do that whenever
 you think your semantic model is doing great and should be pushed to prod! Note that
-the semantic model must be validated to be uploaded."""
+the semantic model must be validated before being uploaded."""
 
 PARTNER_SEMANTIC_HELP = """Uploaded semantic files from a partner tool?
-Use this feature to integrate partner semantic specs into Cortex Analyst's spec.
-Note that the Cortex Analyst semantic model must be validated before integrating partner semantics."""
+Use this feature to integrate partner semantic specs into the ClickZetta semantic model.
+Note that the semantic model must be validated before integrating partner semantics."""
+
+
+def render_iteration_actions(sidebar: DeltaGenerator) -> None:
+    """
+    Render the primary iteration actions (validate/download/upload/join) in the sidebar.
+    """
+
+    yaml_content = st.session_state.get("working_yml") or st.session_state.get("yaml", "")
+    has_yaml_content = bool(yaml_content)
+
+    if sidebar.button(
+        "Validate",
+        use_container_width=True,
+        help=VALIDATE_HELP,
+        disabled=not has_yaml_content,
+    ):
+        if validate_yaml_content(yaml_content):
+            st.rerun()
+
+    sidebar.download_button(
+        label="Download",
+        data=yaml_content if has_yaml_content else "",
+        file_name="semantic_model.yaml",
+        mime="text/yaml",
+        use_container_width=True,
+        help=DOWNLOAD_HELP,
+        disabled=not has_yaml_content,
+    )
+
+    if sidebar.button(
+        "Upload",
+        use_container_width=True,
+        help=UPLOAD_HELP,
+        disabled=not has_yaml_content,
+    ):
+        upload_dialog(yaml_content)
+
+    join_disabled = not st.session_state.get("experimental_features", False)
+    if sidebar.button(
+        "Join Editor",
+        use_container_width=True,
+        disabled=join_disabled,
+    ):
+        st.session_state["open_join_editor"] = True
+
+    if st.session_state.get("partner_setup", False):
+        from partner.partner_utils import integrate_partner_semantics
+
+        if sidebar.button(
+            "Integrate Partner",
+            use_container_width=True,
+            help=PARTNER_SEMANTIC_HELP,
+            disabled=not st.session_state.get("validated"),
+        ):
+            integrate_partner_semantics()
 
 
 def show() -> None:
     init_session_states()
 
-    if "snowflake_stage" not in st.session_state and "yaml" not in st.session_state:
+    if "storage_target" not in st.session_state and "yaml" not in st.session_state:
         # If the user is jumping straight into the iteration flow and not coming from the builder flow,
-        # we need to collect credentials and load YAML from stage.
+        # we need to collect credentials and load YAML from storage.
         # If coming from the builder flow, there's no need to collect this information until the user wants to upload.
         set_up_requirements()
     else:
-        home, mode = st.columns(2)
-        with home:
-            return_home_button()
-        with mode:
-            st.session_state["app_mode"] = st.selectbox(
-                label="App Mode",
-                label_visibility="collapsed",
-                options=["Chat", "Evaluation", "Preview YAML"],
-            )
         if "yaml" not in st.session_state:
-            # Only proceed to download the YAML from stage if we don't have one from the builder flow.
+            # Only proceed to download the YAML from storage if we don't have one from the builder flow.
             yaml = download_yaml(
-                st.session_state.file_name, st.session_state.snowflake_stage.stage_name
+                st.session_state.file_name, st.session_state.storage_target
             )
             st.session_state["yaml"] = yaml
             st.session_state["semantic_model"] = yaml_to_semantic_model(yaml)
             if "last_saved_yaml" not in st.session_state:
                 st.session_state["last_saved_yaml"] = yaml
+
+        if "working_yml" not in st.session_state:
+            st.session_state["working_yml"] = st.session_state.get("yaml", "")
+
+        st.session_state.setdefault("experimental_features", False)
+
+        sidebar = st.sidebar
+        render_sidebar_title(sidebar)
+        return_home_button(sidebar)
+
+        render_iteration_actions(sidebar)
+        sidebar.divider()
+
+        current_mode = st.session_state.get("app_mode", "Chat")
+        app_modes = ["Chat", "Evaluation", "Preview YAML"]
+        try:
+            default_index = app_modes.index(current_mode)
+        except ValueError:
+            default_index = 0
+        st.session_state["app_mode"] = sidebar.selectbox(
+            "App Mode",
+            app_modes,
+            index=default_index,
+        )
+        current_mode = st.session_state["app_mode"]
+
+        if not st.session_state.get("experimental_features"):
+            st.session_state["join_dialog_open"] = False
+            st.session_state.pop("open_join_editor", None)
+        else:
+            if "join_dialog_open" not in st.session_state:
+                st.session_state["join_dialog_open"] = False
+
+        if current_mode == "Chat":
+            if sidebar.button("Chat Settings", use_container_width=True):
+                chat_settings_dialog()
+
+        sidebar.divider()
+        render_metadata_sections(sidebar)
+        sidebar.divider()
 
         left, right = st.columns(2)
         yaml_container = left.container(height=760)
@@ -715,9 +847,7 @@ def show() -> None:
             elif app_mode == "Evaluation":
                 evaluation_mode_show()
             elif app_mode == "Chat":
-                if st.button("Settings"):
-                    chat_settings_dialog()
                 # We still initialize an empty connector and pass it down in order to propagate the connector auth token.
-                chat_and_edit_vqr(get_snowflake_connection())
+                chat_and_edit_vqr(get_clickzetta_connection())
             else:
                 st.error(f"Unknown App Mode: {app_mode}")

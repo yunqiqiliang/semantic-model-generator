@@ -23,7 +23,8 @@ from strictyaml import (
 )
 
 from semantic_model_generator.protos import semantic_model_pb2
-from semantic_model_generator.validate.keywords import SF_RESERVED_WORDS
+from semantic_model_generator.validate.keywords import CZ_RESERVED_WORDS
+from semantic_model_generator.data_processing.cte_utils import ClickzettaDialect
 
 scalar_type_map = {
     FieldDescriptor.TYPE_BOOL: Bool,
@@ -38,7 +39,7 @@ scalar_type_map = {
 class SqlExpression(Str):  # type: ignore
     def validate_scalar(self, chunk):  # type: ignore
         try:
-            sqlglot.parse_one(chunk.contents, dialect=sqlglot.dialects.Snowflake)  # type: ignore
+            sqlglot.parse_one(chunk.contents, dialect=ClickzettaDialect)  # type: ignore
         except Exception:
             chunk.expecting_but_found("", "invalid SQL expression")
         return chunk.contents
@@ -51,8 +52,8 @@ class IdField(Str):  # type: ignore
                 "",
                 "name can only contain letters, underscores, decimal digits (0-9), and dollar signs ($).",
             )
-        if chunk.contents.upper() in SF_RESERVED_WORDS:
-            chunk.expecting_but_found("", "name cannot be a Snowflake reserved keyword")
+        if chunk.contents.upper() in CZ_RESERVED_WORDS:
+            chunk.expecting_but_found("", "name cannot be a ClickZetta reserved keyword")
         return chunk.contents
 
 

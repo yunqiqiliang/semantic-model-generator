@@ -1,6 +1,6 @@
-name: sf_env
+name: clickzetta_env
 channels:
-- snowflake
+- conda-forge
 dependencies:
 - python=3.10.*
 - pandas=2.2.2
@@ -19,6 +19,10 @@ dependencies:
 - requests=2.32.3
 - types-pyyaml=6.0.12.12
 - types-protobuf=4.25.0.20240417
-- snowflake-snowpark-python=1.18.0
+- clickzetta-connector-python=0.8.92
+- clickzetta-zettapark-python=0.1.3
 - streamlit-extras=0.4.0
+- streamlit-js-eval=0.1.7
 - cattrs=23.1.2
+- pip:
+  - dashscope==1.22.2

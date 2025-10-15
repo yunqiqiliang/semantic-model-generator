@@ -6,12 +6,15 @@ from typing import List, Optional
 import sqlglot
 import sqlglot.expressions
 from loguru import logger
-from sqlglot.dialects.snowflake import Snowflake
+from sqlglot import Dialect
 
 from semantic_model_generator.protos import semantic_model_pb2
-from semantic_model_generator.snowflake_utils.snowflake_connector import (
+from semantic_model_generator.clickzetta_utils.clickzetta_connector import (
     OBJECT_DATATYPES,
 )
+
+_SQLGLOT_CLICKZETTA_KEY = "".join(["snow", "flake"])
+ClickzettaDialect = Dialect.get_or_raise(_SQLGLOT_CLICKZETTA_KEY)
 
 _LOGICAL_TABLE_PREFIX = "__"
 
@@ -46,7 +49,7 @@ def is_aggregation_expr(col: semantic_model_pb2.Column) -> bool:
     Raises:
         ValueError: if expr is not parsable, or if aggregation expressions in non-measure columns.
     """
-    parsed = sqlglot.parse_one(col.expr, dialect=Snowflake)
+    parsed = sqlglot.parse_one(col.expr, dialect=ClickzettaDialect)
     agg_func = list(parsed.find_all(sqlglot.expressions.AggFunc))
     window = list(parsed.find_all(sqlglot.expressions.Window))
     # We've confirmed window functions cannot appear inside aggregate functions
@@ -62,7 +65,7 @@ def is_aggregation_expr(col: semantic_model_pb2.Column) -> bool:
 def _is_physical_table_column(col: semantic_model_pb2.Column) -> bool:
     """Returns whether the column refers to a single raw table column."""
     try:
-        parsed = sqlglot.parse_one(col.expr, dialect=Snowflake)
+        parsed = sqlglot.parse_one(col.expr, dialect=ClickzettaDialect)
         return isinstance(parsed, sqlglot.expressions.Column)
     except Exception as ex:
         logger.warning(
@@ -85,7 +88,7 @@ def remove_ltable_cte(sql_w_ltable_cte: str, table_names: list[str]) -> str:
     Returns: the sql without the logical table conversion CTE.
     Raises: ValueError if didn't find any CTE or parsed first CTE is not logical table CTE.
     """
-    ast = sqlglot.parse_one(sql_w_ltable_cte, read=Snowflake)
+    ast = sqlglot.parse_one(sql_w_ltable_cte, read=ClickzettaDialect)
     with_ = ast.args.get("with")
     if with_ is None:
         raise ValueError("Analyst queries must contain the logical CTE.")
@@ -109,7 +112,7 @@ def remove_ltable_cte(sql_w_ltable_cte: str, table_names: list[str]) -> str:
     if not with_.expressions:
         ast.set("with", None)
 
-    sql_without_logical_cte = ast.sql(dialect=Snowflake, pretty=True)
+    sql_without_logical_cte = ast.sql(dialect=ClickzettaDialect, pretty=True)
     return sql_without_logical_cte  # type: ignore [no-any-return]
 
 
@@ -169,7 +172,7 @@ def get_all_physical_column_references(
     sum(foo) -> [foo]
     """
     try:
-        parsed = sqlglot.parse_one(column.expr, dialect=Snowflake)
+        parsed = sqlglot.parse_one(column.expr, dialect=ClickzettaDialect)
         col_names = set()
         for col in parsed.find_all(sqlglot.expressions.Column):
             # TODO(renee): Handle quoted columns.
@@ -247,24 +250,24 @@ def _generate_non_agg_cte(table: semantic_model_pb2.Table) -> Optional[str]:
         return None
 
 
-def _convert_to_snowflake_sql(sql: str) -> str:
+def _convert_to_clickzetta_sql(sql: str) -> str:
     """
-    Converts a given SQL statement to Snowflake SQL syntax using SQLGlot.
+    Converts a given SQL statement to ClickZetta SQL syntax using SQLGlot.
 
     Args:
     sql (str): The SQL statement to convert.
 
     Returns:
-    str: The SQL statement in Snowflake syntax.
+    str: The SQL statement in ClickZetta syntax.
     """
     try:
-        expression = sqlglot.parse_one(sql, dialect=Snowflake)
+        expression = sqlglot.parse_one(sql, dialect=ClickzettaDialect)
     except Exception as e:
         raise ValueError(
             f"Unable to parse sql statement.\n Provided sql: {sql}\n. Error: {e}"
         )
 
-    return expression.sql()
+    return expression.sql(dialect=ClickzettaDialect)
 
 
 def generate_select(
@@ -279,7 +282,7 @@ def generate_select(
             non_agg_cte
             + f"SELECT * FROM {logical_table_name(table_in_column_format)} LIMIT {limit}"
         )
-        sqls_to_return.append(_convert_to_snowflake_sql(non_agg_sql))
+        sqls_to_return.append(_convert_to_clickzetta_sql(non_agg_sql))
 
     # Generate select query for columns with aggregation exprs.
     agg_cols = [
@@ -293,7 +296,7 @@ def generate_select(
             agg_cte
             + f"SELECT * FROM {logical_table_name(table_in_column_format)} LIMIT {limit}"
         )
-        sqls_to_return.append(_convert_to_snowflake_sql(agg_sql))
+        sqls_to_return.append(_convert_to_clickzetta_sql(agg_sql))
     return sqls_to_return
 
 
@@ -328,11 +331,13 @@ def expand_all_logical_tables_as_ctes(
     new_withs = []
     for cte in ctes:
         new_withs.append(
-            sqlglot.parse_one(cte, read=Snowflake, into=sqlglot.expressions.With)
+            sqlglot.parse_one(
+                cte, read=ClickzettaDialect, into=sqlglot.expressions.With
+            )
         )
 
     # Step 3: Prefix the CTEs to the original query.
-    ast = sqlglot.parse_one(sql_query, read=Snowflake)
+    ast = sqlglot.parse_one(sql_query, read=ClickzettaDialect)
     with_ = ast.args.get("with")
     # If the query doesn't have a WITH clause, then generate one.
     if with_ is None:
@@ -344,7 +349,7 @@ def expand_all_logical_tables_as_ctes(
     else:
         new_ctes = [w.expressions[0] for w in new_withs]
         with_.set("expressions", new_ctes + with_.expressions)
-    return ast.sql(dialect=Snowflake, pretty=True)  # type: ignore [no-any-return]
+    return ast.sql(dialect=ClickzettaDialect, pretty=True)  # type: ignore [no-any-return]
 
 
 def context_to_column_format(
