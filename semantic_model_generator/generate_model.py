@@ -338,17 +338,38 @@ def _suggest_filters(raw_table: data_types.Table) -> List[semantic_model_pb2.Nam
                     expr=expr,
                 )
             )
-        if 0 < len(distinct_values) <= 5:
-            formatted = [_format_literal(val, base_type) for val in distinct_values[:5]]
-            expr = f"{col.column_name} IN ({', '.join(formatted)})"
-            suggestions.append(
-                semantic_model_pb2.NamedFilter(
-                    name=f"{col.column_name}_include_values",
-                    synonyms=[_PLACEHOLDER_COMMENT],
-                    description=_PLACEHOLDER_COMMENT,
-                    expr=expr,
-                )
+        if 1 < len(distinct_values) <= 5:
+            upper_name = col.column_name.upper()
+            is_identifier_like = upper_name.endswith(("ID", "_ID", "KEY", "_KEY"))
+
+            categorical_suffixes = (
+                "STATUS",
+                "FLAG",
+                "TYPE",
+                "PRIORITY",
+                "SEGMENT",
+                "CATEGORY",
+                "MODE",
+                "CODE",
+                "LEVEL",
             )
+            is_textual = base_type in {"STRING", "TEXT", "VARCHAR", "CHAR", "CHARACTER"}
+            is_boolean = base_type in {"BOOLEAN"}
+            is_categorical_numeric = base_type in {"INT", "INTEGER", "NUMBER", "SMALLINT", "BIGINT"} and any(
+                upper_name.endswith(suffix) for suffix in categorical_suffixes
+            )
+
+            if not is_identifier_like and (is_textual or is_boolean or is_categorical_numeric):
+                formatted = [_format_literal(val, base_type) for val in distinct_values[:5]]
+                expr = f"{col.column_name} IN ({', '.join(formatted)})"
+                suggestions.append(
+                    semantic_model_pb2.NamedFilter(
+                        name=f"{col.column_name}_include_values",
+                        synonyms=[_PLACEHOLDER_COMMENT],
+                        description=_PLACEHOLDER_COMMENT,
+                        expr=expr,
+                    )
+                )
     return suggestions
 
 

@@ -782,6 +782,9 @@ def show() -> None:
             st.session_state["semantic_model"] = yaml_to_semantic_model(yaml)
             if "last_saved_yaml" not in st.session_state:
                 st.session_state["last_saved_yaml"] = yaml
+            st.session_state["validated"] = None
+            if "last_validated_model" in st.session_state:
+                st.session_state.last_validated_model.Clear()
 
         if "working_yml" not in st.session_state:
             st.session_state["working_yml"] = st.session_state.get("yaml", "")
