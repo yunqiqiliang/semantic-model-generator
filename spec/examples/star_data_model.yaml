@@ -1,0 +1,845 @@
+name: star_data_model
+description: This dimension table supports analysis of customer characteristics and
+  is typically joined with fact tables to enable slicing and filtering by customer
+  attributes such as location, type, and credit level.
+tables:
+  - name: DIM_CUSTOMER
+    description: 客户维度表
+    base_table:
+      database: QUICK_START
+      schema: SEMANTIC_MODEL_TEST
+      table: DIM_CUSTOMER
+    filters:
+      - name: customer_name_include_values
+        synonyms:
+          - Filter by selected customers
+          - Include specific customer names
+        description: Limits results to specific predefined customer names.
+        expr: customer_name IN ('黄十七贸易', '王十二', '张三科技有限公司')
+      - name: customer_type_include_values
+        synonyms:
+          - Filter by customer type
+          - Include business or personal customers
+        description: 'Restricts query results to specified customer types: Enterprise
+          or Individual.'
+        expr: customer_type IN ('企业', '个人')
+      - name: city_include_values
+        synonyms:
+          - Filter by city
+          - Selected city filter
+        description: Filters records to include only customers from selected cities.
+        expr: city IN ('南京', '北京', '重庆')
+      - name: region_include_values
+        synonyms:
+          - Filter by region
+          - Regional segmentation
+        description: Includes only customers located in specified geographic regions.
+        expr: region IN ('华中', '西北', '西南')
+      - name: registration_date_last_30_days
+        synonyms:
+          - Recent registrations
+          - New customers in last 30 days
+        description: Filters customers who registered within the last 30 days from
+          the current date.
+        expr: registration_date >= DATEADD('day', -30, CURRENT_DATE())
+      - name: credit_level_include_values
+        synonyms:
+          - Filter by credit rating
+          - Credit tier selection
+        description: Includes only customers with specified credit ratings (A, B,
+          or C).
+        expr: credit_level IN ('A', 'B', 'C')
+    dimensions:
+      - name: customer_id
+        synonyms:
+          - Customer ID
+          - Customer Key
+        description: 客户ID
+        expr: customer_id
+        data_type: BIGINT
+        sample_values:
+          - '1015'
+          - '1001'
+          - '1010'
+      - name: customer_name
+        synonyms:
+          - Customer Name
+          - Company Name
+        description: 客户名称
+        expr: customer_name
+        data_type: STRING
+        sample_values:
+          - 黄十七贸易
+          - 王十二
+          - 张三科技有限公司
+      - name: customer_type
+        synonyms:
+          - Customer Type
+          - Account Type
+        description: 客户类型：个人/企业
+        expr: customer_type
+        data_type: STRING
+        sample_values:
+          - 企业
+          - 个人
+      - name: city
+        synonyms:
+          - City
+          - Customer City
+        description: 所在城市
+        expr: city
+        data_type: STRING
+        sample_values:
+          - 南京
+          - 北京
+          - 重庆
+      - name: region
+        synonyms:
+          - Region
+          - Sales Region
+        description: 所在地区
+        expr: region
+        data_type: STRING
+        sample_values:
+          - 华中
+          - 西北
+          - 西南
+      - name: credit_level
+        synonyms:
+          - Credit Level
+          - Credit Rating
+        description: 信用等级
+        expr: credit_level
+        data_type: STRING
+        sample_values:
+          - A
+          - B
+          - C
+    time_dimensions:
+      - name: registration_date
+        synonyms:
+          - Registration Date
+          - Sign-up Date
+          - Onboarding Date
+        description: 注册日期
+        expr: registration_date
+        data_type: DATE
+        sample_values:
+          - '2023-12-05'
+          - '2023-01-15'
+          - '2024-01-10'
+    metrics:
+      - name: new_customer_count
+        synonyms:
+          - Customer sign-ups
+          - New accounts
+        description: Counts the number of customers registered in a given time period,
+          useful for tracking acquisition growth.
+        expr: COUNT(registration_date)
+      - name: customer_distribution_by_credit_level
+        synonyms:
+          - Customer distribution by credit level
+        description: Shows the count or percentage of customers grouped by their credit
+          rating, used to assess portfolio risk.
+        expr: COUNT(credit_level)
+  - name: DIM_DATE
+    description: 日期维度表
+    base_table:
+      database: QUICK_START
+      schema: SEMANTIC_MODEL_TEST
+      table: DIM_DATE
+    filters:
+      - name: date_value_last_30_days
+        synonyms:
+          - Last 30 days
+          - Recent month
+        description: Filters records to include only those from the last 30 days relative
+          to the current date.
+        expr: date_value >= DATEADD('day', -30, CURRENT_DATE())
+      - name: day_name_last_30_days
+        synonyms:
+          - Recent weekdays (erroneous)
+          - Last 30 days by day name
+        description: Incorrect filter expression; should compare date_value, not day_name.
+          Likely intended to filter recent weekdays but misapplied.
+        expr: day_name >= DATEADD('day', -30, CURRENT_DATE())
+      - name: day_name_include_values
+        synonyms:
+          - Selected weekdays
+          - Include specific days
+        description: 'Filters for specific days of the week: Sunday, Saturday, and
+          Thursday. Useful for focusing on weekends and a mid-week day.'
+        expr: day_name IN ('Sunday', 'Saturday', 'Thursday')
+      - name: is_weekend_include_values
+        synonyms:
+          - All weekend statuses
+          - Include both weekend and weekday
+        description: Includes all records regardless of weekend status. Typically
+          used to ensure no implicit filtering on weekend flag.
+        expr: is_weekend IN (FALSE, TRUE)
+      - name: is_holiday_include_values
+        synonyms:
+          - All holiday statuses
+          - Include holidays and non-holidays
+        description: Includes all records regardless of holiday status. Used to preserve
+          data completeness when holiday flag is present.
+        expr: is_holiday IN (FALSE, TRUE)
+    dimensions:
+      - name: date_id
+        synonyms:
+          - Date key
+          - Date ID
+        description: 日期ID (YYYYMMDD格式)
+        expr: date_id
+        data_type: BIGINT
+        sample_values:
+          - '20240101'
+          - '20240901'
+          - '20240515'
+      - name: is_weekend
+        synonyms:
+          - Weekend flag
+          - Is weekend
+        description: 是否周末
+        expr: is_weekend
+        data_type: BOOLEAN
+        sample_values:
+          - 'False'
+          - 'True'
+      - name: is_holiday
+        synonyms:
+          - Holiday flag
+          - Is holiday
+        description: 是否节假日
+        expr: is_holiday
+        data_type: BOOLEAN
+        sample_values:
+          - 'False'
+          - 'True'
+    time_dimensions:
+      - name: date_value
+        synonyms:
+          - Calendar date
+          - Date
+        description: 日期值
+        expr: date_value
+        data_type: DATE
+        sample_values:
+          - '2024-09-01'
+          - '2024-01-01'
+          - '2024-06-01'
+      - name: day_name
+        synonyms:
+          - Day of week name
+          - Weekday
+        description: 星期名称
+        expr: day_name
+        data_type: TIMESTAMP_NTZ
+        sample_values:
+          - Sunday
+          - Saturday
+          - Thursday
+    facts:
+      - name: year_2
+        synonyms:
+          - Year
+        description: 年份
+        expr: year
+        data_type: INT
+        sample_values:
+          - '2024'
+      - name: quarter
+        synonyms:
+          - Quarter
+        description: 季度
+        expr: quarter
+        data_type: INT
+        sample_values:
+          - '2'
+          - '4'
+          - '3'
+      - name: month_2
+        synonyms:
+          - Month
+        description: 月份
+        expr: month
+        data_type: INT
+        sample_values:
+          - '10'
+          - '4'
+          - '3'
+      - name: week
+        synonyms:
+          - Week number
+          - Week of year
+        description: 周数
+        expr: week
+        data_type: INT
+        sample_values:
+          - '11'
+          - '22'
+          - '16'
+      - name: day_of_month
+        synonyms:
+          - Day of month
+        description: 月中第几天
+        expr: day_of_month
+        data_type: INT
+        sample_values:
+          - '15'
+          - '1'
+          - '14'
+      - name: day_of_week
+        synonyms:
+          - Day of week
+          - Weekday number
+        description: 周中第几天
+        expr: day_of_week
+        data_type: INT
+        sample_values:
+          - '2'
+          - '4'
+          - '3'
+    metrics:
+      - name: weekend_vs_weekday_ratio
+        synonyms:
+          - Weekend share
+          - Weekend traffic ratio
+        description: Measures the proportion of activity occurring on weekends versus
+          weekdays, useful for retail or service demand analysis.
+        expr: COUNT(is_weekend)
+      - name: business_days_count
+        synonyms:
+          - Business days count
+        description: Counts the number of operational business days (non-weekend,
+          non-holiday) within a period, useful for productivity or sales cadence metrics.
+        expr: COUNT(date_value)
+  - name: DIM_PRODUCT
+    description: 产品维度表
+    base_table:
+      database: QUICK_START
+      schema: SEMANTIC_MODEL_TEST
+      table: DIM_PRODUCT
+    filters:
+      - name: product_name_include_values
+        synonyms:
+          - Top laptop models
+          - Featured laptops
+        description: Filters products by specific high-end laptop models
+        expr: product_name IN ('MacBook Pro 14', 'ThinkPad X1', 'Surface Pro 9')
+      - name: category_include_values
+        synonyms:
+          - Electronics categories
+          - Device types
+        description: Includes only tablet, phone, and computer categories
+        expr: category IN ('平板', '手机', '电脑')
+      - name: sub_category_include_values
+        synonyms:
+          - Input devices and mobile devices
+          - Selected subcategories
+        description: Filters for keyboard, smartphone, and tablet sub-categories
+        expr: sub_category IN ('键盘', '智能手机', '平板电脑')
+      - name: brand_include_values
+        synonyms:
+          - Key brands
+          - Preferred vendors
+        description: Limits results to select major brands
+        expr: brand IN ('Samsung', 'Lenovo', 'Microsoft')
+      - name: launch_date_last_30_days
+        synonyms:
+          - New launches
+          - Recent product releases
+        description: Finds products launched in the past 30 days
+        expr: launch_date >= DATEADD('day', -30, CURRENT_DATE())
+    dimensions:
+      - name: product_id
+        synonyms:
+          - Product ID
+          - Product key
+        description: 产品ID
+        expr: product_id
+        data_type: BIGINT
+        sample_values:
+          - '2003'
+          - '2001'
+          - '2005'
+      - name: product_name
+        synonyms:
+          - Product title
+          - Item name
+        description: 产品名称
+        expr: product_name
+        data_type: STRING
+        sample_values:
+          - MacBook Pro 14
+          - ThinkPad X1
+          - Surface Pro 9
+      - name: category
+        synonyms:
+          - Product category
+          - Main category
+        description: 产品类别
+        expr: category
+        data_type: STRING
+        sample_values:
+          - 平板
+          - 手机
+          - 电脑
+      - name: sub_category
+        synonyms:
+          - Sub-category
+          - Product subcategory
+        description: 产品子类别
+        expr: sub_category
+        data_type: STRING
+        sample_values:
+          - 键盘
+          - 智能手机
+          - 平板电脑
+      - name: brand
+        synonyms:
+          - Brand name
+          - Product brand
+        description: 品牌
+        expr: brand
+        data_type: STRING
+        sample_values:
+          - Samsung
+          - Lenovo
+          - Microsoft
+    time_dimensions:
+      - name: launch_date
+        synonyms:
+          - Release date
+          - Product launch
+        description: 上市日期
+        expr: launch_date
+        data_type: DATE
+        sample_values:
+          - '2023-03-10'
+          - '2024-01-20'
+          - '2023-05-20'
+    facts:
+      - name: unit_price
+        synonyms:
+          - List price
+          - Retail price
+        description: 单价
+        expr: unit_price
+        data_type: DECIMAL
+        sample_values:
+          - '7888.00'
+          - '6999.00'
+          - '1899.00'
+      - name: cost
+        synonyms:
+          - Unit cost
+          - Product cost
+        description: 成本
+        expr: cost
+        data_type: DECIMAL
+        sample_values:
+          - '1200.00'
+          - '9000.00'
+          - '6500.00'
+    metrics:
+      - name: gross_profit_per_unit
+        synonyms:
+          - Unit profit
+          - Product margin
+        description: Difference between selling price and cost per product unit, used
+          to assess profitability.
+        expr: SUM(unit_price)
+      - name: markup_percentage
+        synonyms:
+          - Markup percentage
+        description: Percentage increase from cost to selling price, indicating pricing
+          strategy strength.
+        expr: SUM(unit_price)
+  - name: DIM_REGION
+    description: 地区维度表
+    base_table:
+      database: QUICK_START
+      schema: SEMANTIC_MODEL_TEST
+      table: DIM_REGION
+    filters:
+      - name: region_name_include_values
+        synonyms:
+          - Top region filter
+          - Selected regions
+        description: 'Limits analysis to specific high-priority regions: Chongqing,
+          Nanjing, and Guangzhou.'
+        expr: region_name IN ('重庆市', '南京市', '广州市')
+      - name: province_include_values
+        synonyms:
+          - Key provinces filter
+          - Target provinces
+        description: Restricts data to key provinces including Jiangsu, Guangdong,
+          and Shanghai municipality.
+        expr: province IN ('江苏省', '广东省', '上海')
+      - name: city_include_values
+        synonyms:
+          - Target cities
+          - Selected cities
+        description: Filters to include only Shenzhen, Xi'an, and Nanjing for focused
+          urban analysis.
+        expr: city IN ('深圳', '西安', '南京')
+      - name: region_type_include_values
+        synonyms:
+          - City tier filter
+          - Urban tier selection
+        description: Includes only first-tier and second-tier cities, targeting economically
+          significant urban centers.
+        expr: region_type IN ('二线', '一线')
+    dimensions:
+      - name: region_id
+        synonyms:
+          - Region ID
+          - Region identifier
+        description: 地区ID
+        expr: region_id
+        data_type: BIGINT
+        sample_values:
+          - '3009'
+          - '3004'
+          - '3003'
+      - name: region_name
+        synonyms:
+          - Region name
+          - Location name
+        description: 地区名称
+        expr: region_name
+        data_type: STRING
+        sample_values:
+          - 重庆市
+          - 南京市
+          - 广州市
+      - name: country
+        synonyms:
+          - Country
+          - Nation
+        description: 国家
+        expr: country
+        data_type: STRING
+        sample_values:
+          - 中国
+      - name: province
+        synonyms:
+          - Province
+          - State
+          - Municipality
+        description: 省份
+        expr: province
+        data_type: STRING
+        sample_values:
+          - 江苏省
+          - 广东省
+          - 上海
+      - name: city
+        synonyms:
+          - City
+          - Urban area
+        description: 城市
+        expr: city
+        data_type: STRING
+        sample_values:
+          - 深圳
+          - 西安
+          - 南京
+      - name: region_type
+        synonyms:
+          - City tier
+          - Region tier
+          - Tier level
+        description: 地区类型：一线/二线/三线
+        expr: region_type
+        data_type: STRING
+        sample_values:
+          - 二线
+          - 一线
+    facts:
+      - name: population
+        synonyms:
+          - Population
+          - Resident count
+        description: 人口数量
+        expr: population
+        data_type: BIGINT
+        sample_values:
+          - '32000000'
+          - '12750000'
+          - '24870000'
+      - name: gdp
+        synonyms:
+          - GDP
+          - Economic output
+        description: GDP
+        expr: gdp
+        data_type: DECIMAL
+        sample_values:
+          - '2882000.00'
+          - '2400000.00'
+          - '1663000.00'
+    metrics:
+      - name: regional_gdp_per_capita
+        synonyms:
+          - GDP per capita
+          - Per capita economic output
+        description: Calculates GDP per person by dividing total GDP by population,
+          useful for measuring economic productivity and living standards.
+        expr: SUM(gdp)
+      - name: economic_density
+        synonyms:
+          - Wealth concentration
+          - Output per capita
+        description: Measures economic output relative to population size, indicating
+          how efficiently a region generates wealth.
+        expr: SUM(gdp)
+  - name: FACT_SALES
+    description: 销售事实表
+    base_table:
+      database: QUICK_START
+      schema: SEMANTIC_MODEL_TEST
+      table: FACT_SALES
+    filters:
+      - name: order_status_include_values
+        synonyms:
+          - Valid order statuses
+          - Included order states
+        description: Limits results to orders with active or completed lifecycle statuses
+        expr: order_status IN ('completed', 'pending', 'cancelled')
+      - name: payment_method_include_values
+        synonyms:
+          - Accepted payment types
+          - Supported payment channels
+        description: Restricts results to common digital and corporate payment methods
+        expr: payment_method IN ('企业账户', '支付宝', '银行转账')
+      - name: created_at_last_30_days
+        synonyms:
+          - Recent orders
+          - New sales in past month
+        description: Filters records created within the last 30 days from current
+          date
+        expr: created_at >= DATEADD('day', -30, CURRENT_DATE())
+      - name: updated_at_last_30_days
+        synonyms:
+          - Recently modified orders
+          - Updated sales activity
+        description: Includes only records updated in the last 30 days
+        expr: updated_at >= DATEADD('day', -30, CURRENT_DATE())
+    dimensions:
+      - name: order_id
+        synonyms:
+          - Order number
+          - Sales order ID
+        description: 订单ID
+        expr: order_id
+        data_type: BIGINT
+        sample_values:
+          - '100037'
+          - '100032'
+          - '100035'
+      - name: order_date_id
+        synonyms:
+          - Order date
+          - Transaction date
+        description: 订单日期ID (关联dim_date)
+        expr: order_date_id
+        data_type: BIGINT
+        sample_values:
+          - '20240115'
+          - '20240415'
+          - '20240315'
+      - name: customer_id
+        synonyms:
+          - Customer number
+          - Client ID
+        description: 客户ID (关联dim_customer)
+        expr: customer_id
+        data_type: BIGINT
+        sample_values:
+          - '1002'
+          - '1012'
+          - '1003'
+      - name: product_id
+        synonyms:
+          - Product number
+          - Item ID
+        description: 产品ID (关联dim_product)
+        expr: product_id
+        data_type: BIGINT
+        sample_values:
+          - '2003'
+          - '2010'
+          - '2004'
+      - name: region_id
+        synonyms:
+          - Region code
+          - Sales region
+        description: 地区ID (关联dim_region)
+        expr: region_id
+        data_type: BIGINT
+        sample_values:
+          - '3007'
+          - '3002'
+          - '3011'
+      - name: order_status
+        synonyms:
+          - Order state
+          - Status
+        description: 订单状态：pending/completed/cancelled
+        expr: order_status
+        data_type: STRING
+        sample_values:
+          - completed
+          - pending
+          - cancelled
+      - name: payment_method
+        synonyms:
+          - Payment type
+          - Payment channel
+        description: 支付方式
+        expr: payment_method
+        data_type: STRING
+        sample_values:
+          - 企业账户
+          - 支付宝
+          - 银行转账
+    time_dimensions:
+      - name: created_at
+        synonyms:
+          - Creation time
+          - Record insertion time
+        description: 创建时间
+        expr: created_at
+        data_type: TIMESTAMP_LTZ
+        sample_values:
+          - '2024-04-01 02:20:00+00:00'
+          - '2024-08-01 07:20:00+00:00'
+          - '2024-07-15 08:00:00+00:00'
+      - name: updated_at
+        synonyms:
+          - Last modified time
+          - Update timestamp
+        description: 更新时间
+        expr: updated_at
+        data_type: TIMESTAMP_LTZ
+        sample_values:
+          - '2024-05-16 01:00:00+00:00'
+          - '2024-09-15 07:45:00+00:00'
+          - '2024-03-15 03:00:00+00:00'
+    facts:
+      - name: quantity
+        synonyms:
+          - Units sold
+          - Order quantity
+        description: 购买数量
+        expr: quantity
+        data_type: INT
+        sample_values:
+          - '2'
+          - '12'
+          - '10'
+      - name: unit_price
+        synonyms:
+          - Selling price per unit
+          - Unit selling price
+        description: 单价
+        expr: unit_price
+        data_type: DECIMAL
+        sample_values:
+          - '7888.00'
+          - '10999.00'
+          - '1899.00'
+      - name: discount_rate
+        synonyms:
+          - Discount percentage
+          - Rate of discount
+        description: 折扣率
+        expr: discount_rate
+        data_type: DECIMAL
+        sample_values:
+          - '0.12'
+          - '0.10'
+          - '0.00'
+      - name: total_amount
+        synonyms:
+          - Net sales amount
+          - Final sale value
+        description: 总金额
+        expr: total_amount
+        data_type: DECIMAL
+        sample_values:
+          - '25193.70'
+          - '43189.20'
+          - '29438.16'
+      - name: cost_amount
+        synonyms:
+          - Cost of goods sold
+          - Product cost
+        description: 成本金额
+        expr: cost_amount
+        data_type: DECIMAL
+        sample_values:
+          - '16000.00'
+          - '33600.00'
+          - '6400.00'
+      - name: profit_amount
+        synonyms:
+          - Gross profit
+          - Sale profit
+        description: 利润金额
+        expr: profit_amount
+        data_type: DECIMAL
+        sample_values:
+          - '5438.16'
+          - '13428.80'
+          - '2245.00'
+    metrics:
+      - name: average_order_value
+        synonyms:
+          - AOV
+          - Average sale value
+        description: The average revenue generated per order, calculated by dividing
+          total sales by the number of unique orders.
+        expr: AVG(total_amount)
+      - name: gross_profit_margin
+        synonyms:
+          - Profit margin
+          - Gross margin
+        description: Percentage of revenue retained after deducting the cost of goods
+          sold, indicating profitability efficiency.
+        expr: SUM(profit_amount)
+relationships:
+  - name: FACT_SALES_to_DIM_CUSTOMER
+    left_table: FACT_SALES
+    right_table: DIM_CUSTOMER
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: customer_id
+        right_column: customer_id
+  - name: FACT_SALES_to_DIM_DATE
+    left_table: FACT_SALES
+    right_table: DIM_DATE
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: order_date_id
+        right_column: date_id
+  - name: FACT_SALES_to_DIM_PRODUCT
+    left_table: FACT_SALES
+    right_table: DIM_PRODUCT
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: product_id
+        right_column: product_id
+  - name: FACT_SALES_to_DIM_REGION
+    left_table: FACT_SALES
+    right_table: DIM_REGION
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: region_id
+        right_column: region_id

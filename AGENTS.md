@@ -10,7 +10,7 @@
 - `poetry run pytest -q` executes the unit suite; add `-k clickzetta` for quick connector checks.
 
 ## ClickZetta Integration Notes
-- Connections read from the same `connections.json` hierarchy used by `mcp-clickzetta-server`. Keep `volume:user://~/semantic_model/` as the default stage and prefer `USE VOLUME` flow—named volumes require extra privileges.
+- Connections read from the same `connections.json` hierarchy used by `mcp-clickzetta-server`. Keep `volume:user://~/semantic_models/` as the default stage and prefer `USE VOLUME` flow—named volumes require extra privileges.
 - Metadata queries target ClickZetta’s information schema (`sys.information_schema.tables`) and expect upper-cased identifiers. When adjusting filters, confirm they match https://yunqi.tech/documents/sql-reference semantics.
 - Reserved keywords and data types mirror the ClickZetta runtime (`clickzetta/zettapark/_internal/reserved_words.py`). If you add mappings, update `semantic_model_generator/validate/keywords.py` and align `DIMENSION_/MEASURE_/OBJECT_DATATYPES` so unsupported payloads (e.g., VECTOR, VARBINARY, JSON) are skipped gracefully.
 - DashScope settings (API key, base URL, model, sampling params) load from the same connection config. When present, the “Use DashScope to enrich descriptions” checkbox will call the model to fill missing descriptions and business-friendly metric aliases; keep the response JSON-only per the prompt schema when changing prompts.

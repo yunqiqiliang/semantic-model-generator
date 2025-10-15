@@ -189,3 +189,37 @@ def test_infer_relationships_lineitem_supplier() -> None:
     join = rel.relationship_columns[0]
     assert join.left_column == "l_suppkey"
     assert join.right_column == "s_suppkey"
+
+
+def test_infer_relationships_handles_suffix_based_foreign_keys() -> None:
+    dim_date = Table(
+        id_=0,
+        name="DIM_DATE",
+        columns=[
+            Column(id_=0, column_name="date_id", column_type="INT", values=["20240101", "20240102"], is_primary_key=True),
+            Column(id_=1, column_name="date_value", column_type="DATE"),
+        ],
+    )
+    fact_sales = Table(
+        id_=1,
+        name="FACT_SALES",
+        columns=[
+            Column(id_=0, column_name="order_id", column_type="INT", values=["10", "11"]),
+            Column(id_=1, column_name="order_date_id", column_type="INT", values=["20240101", "20240102"]),
+        ],
+    )
+
+    relationships = generate_model._infer_relationships(
+        [
+            (FQNParts(database="CAT", schema_name="SCH", table="DIM_DATE"), dim_date),
+            (FQNParts(database="CAT", schema_name="SCH", table="FACT_SALES"), fact_sales),
+        ]
+    )
+
+    assert relationships
+    rel = relationships[0]
+    assert rel.left_table == "FACT_SALES"
+    assert rel.right_table == "DIM_DATE"
+    join = rel.relationship_columns[0]
+    assert join.left_column == "order_date_id"
+    assert join.right_column == "date_id"

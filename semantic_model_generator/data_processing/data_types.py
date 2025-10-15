@@ -23,6 +23,7 @@ class Column:
     comment: Optional[str] = (
         None  # comment field's to save the column comment user specified on the column
     )
+    is_primary_key: bool = False
 
     def __post_init__(self: Any) -> None:
         """

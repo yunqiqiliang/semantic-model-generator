@@ -28,6 +28,7 @@ _TABLE_SCHEMA_COL = "TABLE_SCHEMA"
 _TABLE_NAME_COL = "TABLE_NAME"
 _COLUMN_COMMENT_ALIAS = "COLUMN_COMMENT"
 _TABLE_COMMENT_COL = "TABLE_COMMENT"
+_IS_PRIMARY_KEY_COL = "IS_PRIMARY_KEY"
 
 TIME_MEASURE_DATATYPES = [
     "DATE",
@@ -83,7 +84,7 @@ def _execute_query_to_pandas(connection: Any, query: str) -> pd.DataFrame:
     sessions and legacy connector shims.
     """
 
-    logger.debug("Executing query: %s", query)
+    logger.debug("Executing query: {}", query)
 
     if hasattr(connection, "sql"):
         return connection.sql(query).to_pandas()
@@ -270,12 +271,20 @@ def _get_column_representation(
         else None
     )
 
+    raw_primary = column_row.get(_IS_PRIMARY_KEY_COL)
+    if isinstance(raw_primary, str):
+        normalized = raw_primary.strip().upper()
+        is_primary = normalized in {"TRUE", "YES", "1"}
+    else:
+        is_primary = bool(raw_primary)
+
     return Column(
         id_=column_index,
         column_name=column_name,
         comment=_get_column_comment(column_row),
         column_type=column_datatype,
         values=column_values,
+        is_primary_key=is_primary,
     )
 
 
@@ -333,7 +342,7 @@ def _catalog_category(session: Session, workspace: str) -> str:
     try:
         df = session.sql("SHOW CATALOGS").to_pandas()
     except Exception as exc:  # pragma: no cover
-        logger.debug("SHOW CATALOGS failed: %s", exc)
+        logger.debug("SHOW CATALOGS failed: {}", exc)
         _CATALOG_CATEGORY_CACHE[workspace_upper] = "UNKNOWN"
         return "UNKNOWN"
 
@@ -441,7 +450,8 @@ SELECT
     c.column_name AS {_COLUMN_NAME_COL},
     c.data_type AS {_DATATYPE_COL},
     c.comment AS {_COLUMN_COMMENT_ALIAS},
-    t.comment AS {_TABLE_COMMENT_COL}
+    t.comment AS {_TABLE_COMMENT_COL},
+    c.is_primary_key AS {_IS_PRIMARY_KEY_COL}
 FROM information_schema.tables t
 JOIN information_schema.columns c
   ON t.table_schema = c.table_schema
@@ -470,7 +480,7 @@ def _fetch_columns_via_show(
         try:
             df = session.sql(query).to_pandas()
         except Exception as exc:
-            logger.debug("SHOW COLUMNS fallback failed for %s: %s", qualified_table, exc)
+            logger.debug("SHOW COLUMNS fallback failed for {}: {}", qualified_table, exc)
             continue
         if df.empty:
             continue
@@ -488,6 +498,7 @@ def _fetch_columns_via_show(
         normalized[_DATATYPE_COL] = df[datatype_col] if datatype_col else ""
         normalized[_COLUMN_COMMENT_ALIAS] = df[comment_col] if comment_col else ""
         normalized[_TABLE_COMMENT_COL] = ""
+        normalized[_IS_PRIMARY_KEY_COL] = False
         rows.append(normalized)
 
     if not rows:
@@ -520,7 +531,7 @@ def get_valid_schemas_tables_columns_df(
         try:
             result = session.sql(query).to_pandas()
         except Exception as exc:
-            logger.debug("information_schema query failed: %s", exc)
+            logger.debug("information_schema query failed: {}", exc)
             result = pd.DataFrame()
 
     if result.empty:
@@ -540,6 +551,16 @@ def get_valid_schemas_tables_columns_df(
         result[_TABLE_NAME_COL] = result[_TABLE_NAME_COL].astype(str).str.upper()
     if _TABLE_SCHEMA_COL in result.columns:
         result[_TABLE_SCHEMA_COL] = result[_TABLE_SCHEMA_COL].astype(str).str.upper()
+    if _IS_PRIMARY_KEY_COL in result.columns:
+        def _normalize_pk(value: Any) -> bool:
+            if isinstance(value, bool):
+                return value
+            if value is None:
+                return False
+            normalized = str(value).strip().upper()
+            return normalized in {"TRUE", "YES", "1"}
+
+        result[_IS_PRIMARY_KEY_COL] = result[_IS_PRIMARY_KEY_COL].apply(_normalize_pk)
     return result
 
 
@@ -671,7 +692,7 @@ def fetch_stages_in_schema(connection: Any, schema_name: str) -> List[str]:
         queries.append(f"SHOW VOLUMES IN {workspace}")
         queries.append(f"SHOW STAGES IN DATABASE {workspace}")
 
-    stage_names: List[str] = ["volume:user://~/semantic_model/"]
+    stage_names: List[str] = ["volume:user://~/semantic_models/"]
     seen: set[str] = set(stage_names)
 
     df = pd.DataFrame()
@@ -682,7 +703,7 @@ def fetch_stages_in_schema(connection: Any, schema_name: str) -> List[str]:
             if not df.empty:
                 break
         except Exception as exc:  # pragma: no cover - defensive fallback
-            logger.debug("Stage/volume query failed (%s): %s", query, exc)
+            logger.debug("Stage/volume query failed ({}): {}", query, exc)
             last_error = exc
     else:
         if last_error:
@@ -746,7 +767,7 @@ def fetch_yaml_names_in_stage(
         try:
             df = _execute_query_to_pandas(connection, list_sql)
         except Exception as exc:  # pragma: no cover - defensive fallback
-            logger.debug("Failed to LIST user volume for %s: %s", stage, exc)
+            logger.debug("Failed to LIST user volume for {}: {}", stage, exc)
             return []
         if df.empty:
             return []
@@ -784,7 +805,7 @@ def fetch_yaml_names_in_stage(
         try:
             df = _execute_query_to_pandas(connection, list_sql)
         except Exception as exc:  # pragma: no cover - defensive fallback
-            logger.debug("Failed to LIST contents for %s: %s", candidate, exc)
+            logger.debug("Failed to LIST contents for {}: {}", candidate, exc)
             continue
         if df.empty:
             continue
@@ -803,7 +824,7 @@ def fetch_table_schema(session: Session, table_fqn: str) -> Dict[str, str]:
     try:
         df = session.sql(f"DESCRIBE TABLE {table_fqn}").to_pandas()
     except Exception as exc:
-        logger.error("Unable to describe table %s: %s", table_fqn, exc)
+        logger.error("Unable to describe table {}: {}", table_fqn, exc)
         raise
     schema: Dict[str, str] = {}
     for _, row in df.iterrows():
@@ -827,7 +848,7 @@ def create_table_in_schema(
         session.sql(query).collect()
         return True
     except Exception as exc:
-        logger.error("Error creating table %s: %s", table_fqn, exc)
+        logger.error("Error creating table {}: {}", table_fqn, exc)
         return False
 
 
@@ -846,7 +867,7 @@ def execute_query(session: Session, query: str) -> Union[pd.DataFrame, str]:
     try:
         return session.sql(query).to_pandas()
     except Exception as exc:
-        logger.info("Query execution failed: %s", exc)
+        logger.info("Query execution failed: {}", exc)
         return str(exc)
 
 

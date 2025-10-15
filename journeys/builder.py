@@ -15,78 +15,38 @@ from app_utils.shared_utils import (
 from semantic_model_generator.llm import is_llm_available
 
 
-def update_schemas_and_tables() -> None:
-    """
-    Callback to run when the selected databases change. Ensures that if a database is deselected, the corresponding
-    schemas and tables are also deselected.
-    Returns: None
-
-    """
-    databases = st.session_state["selected_databases"]
-
-    # Fetch the available schemas for the selected databases
-    schemas = []
-    for db in databases:
-        try:
-            schemas.extend(get_available_schemas(db))
-        except ProgrammingError:
-            logger.info(
-                f"Insufficient permissions to read from database {db}, skipping"
-            )
-
-    st.session_state["available_schemas"] = schemas
-
-    # Enforce that the previously selected schemas are still valid
-    valid_selected_schemas = [
-        schema for schema in st.session_state["selected_schemas"] if schema in schemas
-    ]
-    st.session_state["selected_schemas"] = valid_selected_schemas
-    update_tables()
-
-
-def update_tables() -> None:
-    """
-    Callback to run when the selected schemas change. Ensures that if a schema is deselected, the corresponding
-    tables are also deselected.
-    """
-    schemas = st.session_state["selected_schemas"]
-
-    # Fetch the available tables for the selected schemas
-    tables = []
-    for schema in schemas:
-        try:
-            tables.extend(get_available_tables(schema))
-        except ProgrammingError as exc:
-            logger.warning(
-                "Unable to list tables for {}: {}", schema, exc
-            )
-    logger.debug("Collected {} objects across schemas {}", len(tables), schemas)
-    st.session_state["available_tables"] = tables
-
-    # Enforce that the previously selected tables are still valid
-    valid_selected_tables = [
-        table for table in st.session_state["selected_tables"] if table in tables
-    ]
-    st.session_state["selected_tables"] = valid_selected_tables
-
-
 @st.experimental_dialog("Selecting your tables", width="large")
 def table_selector_dialog() -> None:
     st.write(
         "Please fill out the following fields to start building your semantic model."
     )
+    reset_required = st.session_state.get("table_selector_needs_reset", True)
+    if reset_required:
+        try:
+            get_available_databases.clear()  # type: ignore[attr-defined]
+            get_available_schemas.clear()  # type: ignore[attr-defined]
+            get_available_tables.clear()  # type: ignore[attr-defined]
+        except AttributeError:
+            pass
+        st.session_state["selected_databases"] = []
+        st.session_state["selected_schemas"] = []
+        st.session_state["selected_tables"] = []
+        st.session_state["available_schemas"] = []
+        st.session_state["available_tables"] = []
+    st.session_state["table_selector_needs_reset"] = False
+    if "selected_databases" not in st.session_state:
+        st.session_state["selected_databases"] = []
+    if "selected_schemas" not in st.session_state:
+        st.session_state["selected_schemas"] = []
+    if "selected_tables" not in st.session_state:
+        st.session_state["selected_tables"] = []
+    if "available_schemas" not in st.session_state:
+        st.session_state["available_schemas"] = []
+    if "available_tables" not in st.session_state:
+        st.session_state["available_tables"] = []
     model_name = input_semantic_file_name()
     sample_values = input_sample_value_num()
     st.markdown("")
-
-    if "selected_databases" not in st.session_state:
-        st.session_state["selected_databases"] = []
-
-    if "selected_schemas" not in st.session_state:
-        st.session_state["selected_schemas"] = []
-
-    if "selected_tables" not in st.session_state:
-        st.session_state["selected_tables"] = []
 
     with st.spinner("Loading databases..."):
         available_databases = get_available_databases()
@@ -95,23 +55,44 @@ def table_selector_dialog() -> None:
         label="Databases",
         options=available_databases,
         placeholder="Select the databases that contain the tables you'd like to include in your semantic model.",
-        on_change=update_schemas_and_tables,
         key="selected_databases",
-        # default=st.session_state.get("selected_databases", []),
     )
+
+    selected_databases = st.session_state.get("selected_databases", [])
+    schemas: list[str] = []
+    for db in selected_databases:
+        try:
+            schemas.extend(get_available_schemas(db))
+        except ProgrammingError:
+            logger.info("Insufficient permissions to read from database %s, skipping", db)
+    st.session_state["available_schemas"] = schemas
+    st.session_state["selected_schemas"] = [
+        schema for schema in st.session_state.get("selected_schemas", []) if schema in schemas
+    ]
 
     st.multiselect(
         label="Schemas",
-        options=st.session_state.get("available_schemas", []),
+        options=schemas,
         placeholder="Select the schemas that contain the tables you'd like to include in your semantic model.",
-        on_change=update_tables,
         key="selected_schemas",
         format_func=lambda x: format_workspace_context(x, -1),
     )
 
+    selected_schemas = st.session_state.get("selected_schemas", [])
+    tables: list[str] = []
+    for schema in selected_schemas:
+        try:
+            tables.extend(get_available_tables(schema))
+        except ProgrammingError as exc:
+            logger.warning("Unable to list tables for {}: {}", schema, exc)
+    st.session_state["available_tables"] = tables
+    st.session_state["selected_tables"] = [
+        table for table in st.session_state.get("selected_tables", []) if table in tables
+    ]
+
     st.multiselect(
         label="Tables",
-        options=st.session_state.get("available_tables", []),
+        options=tables,
         placeholder="Select the tables you'd like to include in your semantic model.",
         key="selected_tables",
         format_func=lambda x: format_workspace_context(x, -1),
@@ -156,6 +137,7 @@ def table_selector_dialog() -> None:
                 allow_joins=experimental_features,
                 enrich_with_llm=llm_enrichment,
             )
+            st.session_state["table_selector_needs_reset"] = True
             st.session_state["page"] = GeneratorAppScreen.ITERATION
             st.rerun()
         except ValueError as e:

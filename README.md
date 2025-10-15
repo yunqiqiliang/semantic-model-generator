@@ -55,7 +55,7 @@ python -m streamlit run app.py
 When the app launches it will:
 
 1. Load credentials from the ClickZetta connection config or environment.
-2. Default file operations to `volume:user://~/semantic_model/` inside your user volume.
+2. Default file operations to `volume:user://~/semantic_models/` inside your user volume.
 3. Provide workflows for generating semantic YAML, editing YAML, validating (basic checks), and importing partner specs (dbt, etc.).
 
 ## DashScope 使用提示
@@ -67,7 +67,7 @@ When the app launches it will:
 
 ## Key behaviours
 
-- **Volume-first uploads**: YAML import/export uses the user volume path `volume:user://~/semantic_model/` unless a different volume/stage is selected.
+- **Volume-first uploads**: YAML import/export uses the user volume path `volume:user://~/semantic_models/` unless a different volume/stage is selected.
 - **Metadata discovery**: Workspace metadata (catalogs, schemas, tables) is fetched via ClickZetta INFORMATION_SCHEMA queries. Sample values and comments are collected using ClickZetta sessions.
 - **Partner integrations**: dbt helpers read YAML from the chosen volume/stage, merge metadata, and reuse ClickZetta credentials.
 - **Chat/validation placeholders**: Cortex-specific validation and chat calls are not yet available in ClickZetta mode; the UI will display placeholders instead of calling external services.

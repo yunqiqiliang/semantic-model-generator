@@ -2,7 +2,7 @@ import os
 import re
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from clickzetta.zettapark.session import Session
 from loguru import logger
@@ -226,16 +226,37 @@ def _table_variants(table_name: str) -> set[str]:
     return {variant for variant in variants if variant}
 
 
+_GENERIC_PREFIXES = {
+    "DIM",
+    "FACT",
+    "FCT",
+    "BRIDGE",
+    "BRG",
+    "STG",
+    "ODS",
+    "OD",
+    "DW",
+    "VW",
+    "VIEW",
+    "HUB",
+    "SAT",
+    "LNK",
+    "TMP",
+    "TMPV",
+}
+
+
 def _table_prefixes(table_name: str) -> set[str]:
     prefixes: set[str] = set()
     tokens = _identifier_tokens(table_name)
     if not tokens:
         tokens = [table_name.upper()]
-    for token in tokens:
-        upper = token.upper()
-        prefixes.add(upper)
-        for length in range(1, min(len(upper), 4)):
-            prefixes.add(upper[:length])
+
+    first_token = tokens[0].upper()
+    if first_token in _GENERIC_PREFIXES:
+        for length in range(1, min(len(first_token), 4) + 1):
+            prefixes.add(first_token[:length])
+        prefixes.add(first_token)
     return prefixes
 
 
@@ -404,13 +425,25 @@ def _infer_relationships(
             normalized = _sanitize_identifier_name(column.column_name, prefixes_to_drop=table_prefixes)
             entry = columns_meta.setdefault(
                 normalized,
-                {"names": [], "base_type": base_type, "values": [], "is_identifier": False},
+                {
+                    "names": [],
+                    "base_type": base_type,
+                    "values": [],
+                    "is_identifier": False,
+                    "is_primary": False,
+                },
             )
             entry["base_type"] = base_type
             entry["names"].append(column.column_name)
             if column.values:
                 entry["values"].extend(column.values)
             entry["is_identifier"] = entry["is_identifier"] or _is_identifier_like(column.column_name, base_type)
+            is_primary = getattr(column, "is_primary_key", False)
+            if is_primary:
+                entry["is_primary"] = True
+                if column.column_name not in pk_candidates[normalized]:
+                    pk_candidates[normalized].append(column.column_name)
+                continue
             if _looks_like_primary_key(raw_table.name, column.column_name):
                 pk_candidates[normalized].append(column.column_name)
         metadata[raw_table.name] = {
@@ -420,6 +453,13 @@ def _infer_relationships(
         }
 
     pairs: dict[tuple[str, str], List[tuple[str, str]]] = {}
+
+    def _record_pair(left_table: str, right_table: str, left_col: str, right_col: str) -> None:
+        key = (left_table, right_table)
+        value = (left_col, right_col)
+        if value not in pairs.setdefault(key, []):
+            pairs[key].append(value)
+
     table_names = list(metadata.keys())
     for i in range(len(table_names)):
         for j in range(i + 1, len(table_names)):
@@ -427,6 +467,7 @@ def _infer_relationships(
             table_b_name = table_names[j]
             table_a = metadata[table_a_name]
             table_b = metadata[table_b_name]
+
             shared = set(table_a["columns"].keys()) & set(table_b["columns"].keys())
             for col_key in shared:
                 meta_a = table_a["columns"][col_key]
@@ -436,31 +477,71 @@ def _infer_relationships(
                 in_pk_a = col_key in table_a["pk_candidates"]
                 in_pk_b = col_key in table_b["pk_candidates"]
                 if in_pk_a and not in_pk_b:
-                    left_table, right_table = table_b_name, table_a_name
-                    left_col = meta_b["names"][0]
-                    right_col = meta_a["names"][0]
+                    _record_pair(
+                        table_b_name,
+                        table_a_name,
+                        meta_b["names"][0],
+                        meta_a["names"][0],
+                    )
                 elif in_pk_b and not in_pk_a:
-                    left_table, right_table = table_a_name, table_b_name
-                    left_col = meta_a["names"][0]
-                    right_col = meta_b["names"][0]
+                    _record_pair(
+                        table_a_name,
+                        table_b_name,
+                        meta_a["names"][0],
+                        meta_b["names"][0],
+                    )
                 elif in_pk_a and in_pk_b:
                     pk_count_a = len(table_a["pk_candidates"])
                     pk_count_b = len(table_b["pk_candidates"])
                     if pk_count_a >= 2 and pk_count_b == 1:
-                        left_table, right_table = table_a_name, table_b_name
-                        left_col = meta_a["names"][0]
-                        right_col = meta_b["names"][0]
+                        _record_pair(
+                            table_a_name,
+                            table_b_name,
+                            meta_a["names"][0],
+                            meta_b["names"][0],
+                        )
                     elif pk_count_b >= 2 and pk_count_a == 1:
-                        left_table, right_table = table_b_name, table_a_name
-                        left_col = meta_b["names"][0]
-                        right_col = meta_a["names"][0]
-                    else:
-                        continue
-                else:
+                        _record_pair(
+                            table_b_name,
+                            table_a_name,
+                            meta_b["names"][0],
+                            meta_a["names"][0],
+                        )
+
+            # Suffix-based matches (e.g. order_date_id -> date_id)
+            for pk_norm, pk_cols in table_a["pk_candidates"].items():
+                pk_meta = table_a["columns"].get(pk_norm)
+                if not pk_meta:
                     continue
-                pairs.setdefault((left_table, right_table), []).append(
-                    (left_col, right_col)
-                )
+                for norm_b, meta_b in table_b["columns"].items():
+                    if meta_b["base_type"] != pk_meta["base_type"]:
+                        continue
+                    if norm_b == pk_norm:
+                        continue
+                    if norm_b.endswith(pk_norm):
+                        _record_pair(
+                            table_b_name,
+                            table_a_name,
+                            meta_b["names"][0],
+                            pk_cols[0],
+                        )
+
+            for pk_norm, pk_cols in table_b["pk_candidates"].items():
+                pk_meta = table_b["columns"].get(pk_norm)
+                if not pk_meta:
+                    continue
+                for norm_a, meta_a in table_a["columns"].items():
+                    if meta_a["base_type"] != pk_meta["base_type"]:
+                        continue
+                    if norm_a == pk_norm:
+                        continue
+                    if norm_a.endswith(pk_norm):
+                        _record_pair(
+                            table_a_name,
+                            table_b_name,
+                            meta_a["names"][0],
+                            pk_cols[0],
+                        )
 
     for (left_table, right_table), column_pairs in pairs.items():
         relationship = semantic_model_pb2.Relationship(
@@ -639,6 +720,7 @@ def raw_schema_to_semantic_context(
     n_sample_values: int = _DEFAULT_N_SAMPLE_VALUES_PER_COL,
     allow_joins: Optional[bool] = True,
     enrich_with_llm: bool = False,
+    progress_callback: Optional[Callable[[str], None]] = None,
 ) -> semantic_model_pb2.SemanticModel:
     """
     Converts a list of fully qualified ClickZetta table names into a semantic model.
@@ -661,6 +743,13 @@ def raw_schema_to_semantic_context(
     """
 
     # For FQN tables, the connector handles cross-schema access automatically.
+    def _notify(message: str) -> None:
+        if progress_callback:
+            try:
+                progress_callback(message)
+            except Exception:
+            logger.debug("Progress callback failed for message: {}", message)
+
     table_objects = []
     raw_tables_metadata: List[tuple[data_types.FQNParts, data_types.Table]] = []
     unique_database_schema: List[str] = []
@@ -674,6 +763,7 @@ def raw_schema_to_semantic_context(
             unique_database_schema.append(fqn_databse_schema)
 
         logger.info(f"Pulling column information from {fqn_table}")
+        _notify(f"Fetching metadata for {fqn_table.database}.{fqn_table.schema_name}.{fqn_table.table}...")
         valid_schemas_tables_columns_df = get_valid_schemas_tables_columns_df(
             session=conn,
             workspace=fqn_table.database,
@@ -729,9 +819,16 @@ def raw_schema_to_semantic_context(
     if enrich_with_llm:
         settings = get_dashscope_settings()
         if settings:
+            actual_model = "qwen-plus-latest"
+            logger.info(
+                "Running DashScope enrichment for semantic model '{}' using model '{}'",
+                semantic_model_name,
+                actual_model,
+            )
+            _notify("Running DashScope enrichment to enhance descriptions and metrics...")
             settings = DashscopeSettings(
                 api_key=settings.api_key,
-                model="qwen-plus-latest",
+                model=actual_model,
                 base_url=settings.base_url,
                 temperature=settings.temperature,
                 top_p=settings.top_p,
@@ -745,8 +842,10 @@ def raw_schema_to_semantic_context(
                 client,
                 placeholder=_PLACEHOLDER_COMMENT,
             )
+            _notify("DashScope enrichment complete.")
         else:
             logger.warning("LLM enrichment was requested but DashScope is not configured; skipping enrichment.")
+            _notify("DashScope configuration missing; skipped enrichment.")
     return context
 
 
@@ -862,6 +961,7 @@ def generate_model_str_from_clickzetta(
     n_sample_values: int = _DEFAULT_N_SAMPLE_VALUES_PER_COL,
     allow_joins: Optional[bool] = True,
     enrich_with_llm: bool = False,
+    progress_callback: Optional[Callable[[str], None]] = None,
 ) -> str:
     """
     Generates a base semantic context from specified ClickZetta tables and returns the raw string.
@@ -872,10 +972,22 @@ def generate_model_str_from_clickzetta(
         conn: ClickZetta session to reuse.
         n_sample_values: The number of sample values to populate for all columns.
         allow_joins: Whether to allow joins in the semantic context.
+        progress_callback: Optional callable invoked with human-readable progress updates.
 
     Returns:
         str: The raw string of the semantic context.
     """
+    def _notify(message: str) -> None:
+        if progress_callback:
+            try:
+                progress_callback(message)
+            except Exception:
+            logger.debug("Progress callback failed for message: {}", message)
+
+    table_list = ", ".join(base_tables)
+    logger.info("Generating semantic model '{}' from tables: {}", semantic_model_name, table_list)
+    _notify("Collecting metadata from ClickZetta tables...")
+
     context = raw_schema_to_semantic_context(
         base_tables,
         n_sample_values=n_sample_values if n_sample_values > 0 else 1,
@@ -883,13 +995,19 @@ def generate_model_str_from_clickzetta(
         allow_joins=allow_joins,
         enrich_with_llm=enrich_with_llm,
         conn=conn,
+        progress_callback=_notify,
     )
+    _notify("Constructing semantic model structure...")
     # Validate the generated yaml is within context limits.
     # We just throw a warning here to allow users to update.
     validate_context_length(context)
+    _notify("Validating semantic model context length...")
 
+    _notify("Converting semantic model to YAML...")
     yaml_str = proto_utils.proto_to_yaml(context)
     # Once we have the yaml, update to include to # <FILL-OUT> tokens.
     yaml_str = append_comment_to_placeholders(yaml_str)
 
+    _notify("Semantic model generation complete.")
+    logger.info("Semantic model '{}' generated successfully.", semantic_model_name)
     return yaml_str

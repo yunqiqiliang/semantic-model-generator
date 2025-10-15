@@ -117,6 +117,7 @@ if __name__ == "__main__":
             "Create a new semantic model",
             use_container_width=True,
         ):
+            st.session_state["table_selector_needs_reset"] = True
             builder.show()
         if sidebar.button(
             "Edit an existing semantic model",

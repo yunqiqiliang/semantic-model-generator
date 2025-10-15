@@ -15,7 +15,7 @@ def test_fetch_stages_includes_user_volume(monkeypatch):
         stages = connector.fetch_stages_in_schema(
             connection=mock.MagicMock(), schema_name="WORKSPACE.SCHEMA"
         )
-    assert stages[0] == "volume:user://~/semantic_model/"
+    assert stages[0] == "volume:user://~/semantic_models/"
     assert "shared_stage" in stages
 
 
@@ -23,9 +23,9 @@ def test_fetch_yaml_names_in_user_volume(monkeypatch):
     data = pd.DataFrame(
         {
             "relative_path": [
-                "semantic_model/example.yaml",
-                "semantic_model/duplicate.yaml",
-                "semantic_model/duplicate.yaml",
+                "semantic_models/example.yaml",
+                "semantic_models/duplicate.yaml",
+                "semantic_models/duplicate.yaml",
             ]
         }
     )
@@ -34,7 +34,7 @@ def test_fetch_yaml_names_in_user_volume(monkeypatch):
     ):
         files = connector.fetch_yaml_names_in_stage(
             connection=mock.MagicMock(),
-            stage="volume:user://~/semantic_model/",
+            stage="volume:user://~/semantic_models/",
             include_yml=True,
         )
     assert files == ["example.yaml", "duplicate.yaml"]

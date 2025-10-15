@@ -367,7 +367,7 @@ def stage_selector_container() -> None:
 
         normalized_dir = default_dir.strip("/ ")
         if not normalized_dir:
-            normalized_dir = "semantic_model"
+            normalized_dir = "semantic_models"
         volume_uri = "volume:user://~/"
         if normalized_dir:
             volume_uri = f"volume:user://~/{normalized_dir}/"
@@ -1380,8 +1380,19 @@ def run_generate_model_str_from_clickzetta(
     elif not base_tables:
         raise ValueError("Please select at least one table to proceed.")
     else:
-        with st.spinner("Generating model. This may take minutes ..."):
+        status = st.status(
+            "Generating semantic model...",
+            state="running",
+            expanded=True,
+        )
+        status.write("Initializing ClickZetta connection...")
+        try:
             connection = get_clickzetta_connection()
+            status.write("Connection established. Preparing metadata fetch...")
+
+            def progress_callback(message: str) -> None:
+                status.write(message)
+
             yaml_str = generate_model_str_from_clickzetta(
                 base_tables=base_tables,
                 semantic_model_name=model_name,
@@ -1389,9 +1400,24 @@ def run_generate_model_str_from_clickzetta(
                 conn=connection.session,
                 allow_joins=allow_joins,
                 enrich_with_llm=enrich_with_llm,
+                progress_callback=progress_callback,
             )
-
+        except Exception as exc:
+            status.update(
+                label="Semantic model generation failed.",
+                state="error",
+                expanded=True,
+            )
+            status.write(str(exc))
+            raise
+        else:
+            status.write("Semantic YAML generated. Updating workspace...")
             st.session_state["yaml"] = yaml_str
+            status.update(
+                label="Semantic model generated successfully.",
+                state="complete",
+                expanded=False,
+            )
 
 
 @dataclass
