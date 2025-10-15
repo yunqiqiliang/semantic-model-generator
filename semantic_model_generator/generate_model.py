@@ -748,7 +748,7 @@ def raw_schema_to_semantic_context(
             try:
                 progress_callback(message)
             except Exception:
-            logger.debug("Progress callback failed for message: {}", message)
+                logger.debug("Progress callback failed for message: {}", message)
 
     table_objects = []
     raw_tables_metadata: List[tuple[data_types.FQNParts, data_types.Table]] = []
@@ -982,7 +982,7 @@ def generate_model_str_from_clickzetta(
             try:
                 progress_callback(message)
             except Exception:
-            logger.debug("Progress callback failed for message: {}", message)
+                logger.debug("Progress callback failed for message: {}", message)
 
     table_list = ", ".join(base_tables)
     logger.info("Generating semantic model '{}' from tables: {}", semantic_model_name, table_list)
