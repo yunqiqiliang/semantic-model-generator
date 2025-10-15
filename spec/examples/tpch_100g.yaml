@@ -1,0 +1,1373 @@
+name: TPCH_100G
+description: This table connects parts and suppliers, enabling analysis of supply
+  costs, available quantities, and supplier-part relationships in a supply chain context.
+tables:
+  - name: PARTSUPP
+    description: Bridge table linking parts to suppliers with inventory and cost details
+    base_table:
+      database: CLICKZETTA_SAMPLE_DATA
+      schema: TPCH_100G
+      table: PARTSUPP
+    filters:
+      - name: ps_partkey_include_values
+        synonyms:
+          - Include specific parts
+        description: Filter to include specific part keys in analysis
+        expr: ps_partkey IN (45322, 40089, 35638)
+      - name: ps_suppkey_include_values
+        synonyms:
+          - Include specific suppliers
+        description: Filter to include specific supplier keys in analysis
+        expr: ps_suppkey IN (542247, 271388, 511914)
+      - name: ps_availqty_include_values
+        synonyms:
+          - Include specific stock levels
+        description: Filter to include records with specific available quantities
+        expr: ps_availqty IN (9092, 8681, 1815)
+      - name: ps_supplycost_include_values
+        synonyms:
+          - Include specific supply costs
+        description: Filter to include records with specific supply cost values
+        expr: ps_supplycost IN (990.91, 495.01, 286.96)
+      - name: ps_comment_include_values
+        synonyms:
+          - Include specific comments
+        description: Filter to include records matching specific comment text
+        expr: "ps_comment IN (' special pinto beans; furiously pending deposits are\
+          \ carefully across the accounts. blith', 'sts. accounts are furiously unusual\
+          \ grouches: regular, regular platelets use quickly final theodolites. slyly\
+          \ ironic theodolites doze blithely ironic pinto b', 'y special foxes cajole.\
+          \ furiously regular ideas x-ray regular deposits')"
+    dimensions:
+      - name: ps_partkey
+        synonyms:
+          - Part ID
+          - Part key
+        description: Foreign key referencing the part in the parts table
+        expr: ps_partkey
+        data_type: INT
+        sample_values:
+          - '45322'
+          - '40089'
+          - '35638'
+      - name: ps_suppkey
+        synonyms:
+          - Supplier ID
+          - Supplier key
+        description: Foreign key referencing the supplier in the supplier table
+        expr: ps_suppkey
+        data_type: INT
+        sample_values:
+          - '542247'
+          - '271388'
+          - '511914'
+      - name: ps_comment
+        synonyms:
+          - Part-supplier comment
+          - Notes
+        description: Comments related to the part-supplier relationship, often including
+          notes on delivery, quality, or special conditions
+        expr: ps_comment
+        data_type: VARCHAR
+        sample_values:
+          - ' special pinto beans; furiously pending deposits are carefully across
+            the accounts. blith'
+          - 'sts. accounts are furiously unusual grouches: regular, regular platelets
+            use quickly final theodolites. slyly ironic theodolites doze blithely
+            ironic pinto b'
+          - y special foxes cajole. furiously regular ideas x-ray regular deposits
+    facts:
+      - name: ps_availqty
+        synonyms:
+          - Available quantity
+          - Stock quantity
+        description: Number of units of the part available for supply from the supplier
+        expr: ps_availqty
+        data_type: INT
+        sample_values:
+          - '9092'
+          - '8681'
+          - '1815'
+      - name: ps_supplycost
+        synonyms:
+          - Supply cost
+          - Unit supply cost
+        description: Cost incurred by the supplier to provide the part, typically
+          used for internal pricing or margin calculations
+        expr: ps_supplycost
+        data_type: DECIMAL
+        sample_values:
+          - '990.91'
+          - '495.01'
+          - '286.96'
+    metrics:
+      - name: total_inventory_value
+        synonyms:
+          - Inventory value
+          - Stock value
+        description: Calculated as available quantity multiplied by supply cost, representing
+          the total value of inventory held by suppliers per part.
+        expr: SUM(ps_availqty)
+      - name: average_supply_cost_per_part
+        synonyms:
+          - Average part cost
+          - Mean supply cost
+        description: Average cost across suppliers for each part, useful for procurement
+          cost benchmarking.
+        expr: SUM(ps_supplycost)
+  - name: ORDERS
+    description: Fact table capturing order-level details including financials, status,
+      and associated entities such as customers and clerks
+    base_table:
+      database: CLICKZETTA_SAMPLE_DATA
+      schema: TPCH_100G
+      table: ORDERS
+    filters:
+      - name: o_orderkey_include_values
+        synonyms:
+          - Include specific orders
+        description: Filter to include specific orders by their order keys
+        expr: o_orderkey IN (199763075, 203173955, 20877184)
+      - name: o_custkey_include_values
+        synonyms:
+          - Include specific customers
+        description: Filter to include orders from specific customers by customer
+          key
+        expr: o_custkey IN (11199523, 3207869, 906652)
+      - name: o_orderstatus_include_values
+        synonyms:
+          - Filter by order status
+        description: Filter to include orders with specific status codes (e.g., Open,
+          Shipped)
+        expr: o_orderstatus IN ('P', 'F', 'O')
+      - name: o_totalprice_include_values
+        synonyms:
+          - Match exact order values
+        description: Filter to include orders matching specific total price amounts
+        expr: o_totalprice IN (207336.64, 228375.36, 31721.34)
+      - name: o_orderdate_last_30_days
+        synonyms:
+          - Recent orders
+          - Last 30 days of orders
+        description: Filter to include only orders placed within the last 30 days
+          from current date
+        expr: o_orderdate >= DATEADD('day', -30, CURRENT_DATE())
+      - name: o_orderdate_include_values
+        synonyms:
+          - Specific order dates
+        description: Filter to include orders placed on specific dates
+        expr: o_orderdate IN ('1992-01-04', '1992-01-05', '1992-01-02')
+      - name: o_orderpriority_include_values
+        synonyms:
+          - Filter by order priority
+        description: Filter to include orders with specific priority levels
+        expr: o_orderpriority IN ('2-HIGH', '3-MEDIUM', '5-LOW')
+      - name: o_clerk_include_values
+        synonyms:
+          - Orders by clerk
+        description: Filter to include orders handled by specific clerks
+        expr: o_clerk IN ('Clerk#000005959', 'Clerk#000060885', 'Clerk#000082580')
+      - name: o_shippriority_include_values
+        synonyms:
+          - Shipping priority filter
+        description: Filter to include orders with specific shipping priority values
+        expr: o_shippriority IN (0)
+      - name: o_comment_include_values
+        synonyms:
+          - Comment-based filter
+        description: Filter to include orders with specific comment text snippets
+        expr: o_comment IN ('icing, regular packages detect blithel', 'y even dolphins.
+          furiously ironic exc', 's was furiously along the slowly regul')
+    dimensions:
+      - name: o_orderkey
+        synonyms:
+          - Order ID
+          - Order key
+        description: Unique identifier for each order
+        expr: o_orderkey
+        data_type: INT
+        sample_values:
+          - '199763075'
+          - '203173955'
+          - '20877184'
+      - name: o_custkey
+        synonyms:
+          - Customer ID
+          - Customer key
+        description: Foreign key referencing the customer who placed the order
+        expr: o_custkey
+        data_type: INT
+        sample_values:
+          - '11199523'
+          - '3207869'
+          - '906652'
+      - name: o_orderstatus
+        synonyms:
+          - Order status
+        description: "Current status of the order: 'O' for Open, 'F' for Fully shipped,\
+          \ 'P' for Partially shipped"
+        expr: o_orderstatus
+        data_type: CHAR
+        sample_values:
+          - P
+          - F
+          - O
+      - name: o_orderpriority
+        synonyms:
+          - Order priority
+          - Priority level
+        description: Priority level assigned to the order, typically based on customer
+          requirements or urgency
+        expr: o_orderpriority
+        data_type: CHAR
+        sample_values:
+          - 2-HIGH
+          - 3-MEDIUM
+          - 5-LOW
+      - name: o_clerk
+        synonyms:
+          - Order clerk
+          - Sales representative
+        description: Sales clerk responsible for processing the order
+        expr: o_clerk
+        data_type: CHAR
+        sample_values:
+          - Clerk#000005959
+          - Clerk#000060885
+          - Clerk#000082580
+      - name: o_comment
+        synonyms:
+          - Order comment
+          - Notes
+        description: Free-text comment field associated with the order, often containing
+          notes from the customer or clerk
+        expr: o_comment
+        data_type: VARCHAR
+        sample_values:
+          - icing, regular packages detect blithel
+          - y even dolphins. furiously ironic exc
+          - s was furiously along the slowly regul
+    time_dimensions:
+      - name: o_orderdate
+        synonyms:
+          - Order date
+          - Purchase date
+        description: Date when the order was placed
+        expr: o_orderdate
+        data_type: DATE
+        sample_values:
+          - '1992-01-04'
+          - '1992-01-05'
+          - '1992-01-02'
+    facts:
+      - name: o_totalprice
+        synonyms:
+          - Order amount
+          - Total order value
+        description: Total monetary value of the order including all line items and
+          taxes
+        expr: o_totalprice
+        data_type: DECIMAL
+        sample_values:
+          - '207336.64'
+          - '228375.36'
+          - '31721.34'
+      - name: o_shippriority
+        synonyms:
+          - Shipping priority
+        description: Shipping priority level for the order; typically used to determine
+          delivery sequence
+        expr: o_shippriority
+        data_type: INT
+        sample_values:
+          - '0'
+    metrics:
+      - name: total_order_value
+        synonyms:
+          - Gross merchandise value
+          - Order revenue
+        description: Sum of all order totals, used to measure revenue or sales volume
+          across time or segments.
+        expr: SUM(o_totalprice)
+      - name: average_order_value
+        synonyms:
+          - AOV
+          - Average sale
+        description: Average monetary value per order, calculated as total order value
+          divided by number of orders. Used to assess customer spending behavior.
+        expr: SUM(o_totalprice)
+  - name: SUPPLIER
+    description: Supplier dimension table containing supplier details such as name,
+      address, contact information, and account balance.
+    base_table:
+      database: CLICKZETTA_SAMPLE_DATA
+      schema: TPCH_100G
+      table: SUPPLIER
+    filters:
+      - name: s_suppkey_include_values
+        synonyms:
+          - Include Specific Suppliers
+          - Filter by Supplier ID
+        description: Filter to include specific suppliers by their unique supplier
+          key.
+        expr: s_suppkey IN (126328, 33620, 39283)
+      - name: s_name_include_values
+        synonyms:
+          - Filter by Supplier Name
+          - Include Specific Supplier Names
+        description: Filter to include suppliers by exact match on supplier name.
+        expr: s_name IN ('Supplier#000189979', 'Supplier#000227163', 'Supplier#000017606')
+      - name: s_address_include_values
+        synonyms:
+          - Filter by Address
+          - Include Specific Addresses
+        description: Filter to include suppliers based on exact address matches.
+        expr: s_address IN ('4f2D,ov,yFkD5fbXKr', 'aDyz1,ptqspBhwDKWQIO9nnJ', 'pyruQFYzha5KgW9P')
+      - name: s_nationkey_include_values
+        synonyms:
+          - Filter by Country
+          - Include Specific Nations
+        description: Filter to include suppliers from specific nations using nation
+          keys.
+        expr: s_nationkey IN (7, 18, 16)
+      - name: s_phone_include_values
+        synonyms:
+          - Filter by Phone
+          - Include Specific Phone Numbers
+        description: Filter to include suppliers by matching phone numbers.
+        expr: s_phone IN ('34-731-543-8809', '21-431-835-1909', '21-892-663-2701')
+      - name: s_acctbal_include_values
+        synonyms:
+          - Filter by Account Balance
+          - Include Specific Balances
+        description: Filter to include suppliers with specific account balance values.
+        expr: s_acctbal IN (1644.77, 106.61, -546.07)
+      - name: s_comment_include_values
+        synonyms:
+          - Filter by Comment
+          - Include Specific Comments
+        description: Filter to include suppliers whose comment field exactly matches
+          specified text.
+        expr: s_comment IN (' furiously unusual instruction', 'g the regular requests
+          nag furiously fluffily express deposi', 'r dependencies. furiously')
+    dimensions:
+      - name: s_suppkey
+        synonyms:
+          - Supplier ID
+          - Supplier Key
+        description: Unique identifier for each supplier in the system.
+        expr: s_suppkey
+        data_type: INT
+        sample_values:
+          - '126328'
+          - '33620'
+          - '39283'
+      - name: s_name
+        synonyms:
+          - Supplier Name
+        description: Name of the supplier organization.
+        expr: s_name
+        data_type: CHAR
+        sample_values:
+          - Supplier#000189979
+          - Supplier#000227163
+          - Supplier#000017606
+      - name: s_address
+        synonyms:
+          - Supplier Address
+        description: Street or mailing address of the supplier.
+        expr: s_address
+        data_type: VARCHAR
+        sample_values:
+          - 4f2D,ov,yFkD5fbXKr
+          - aDyz1,ptqspBhwDKWQIO9nnJ
+          - pyruQFYzha5KgW9P
+      - name: s_nationkey
+        synonyms:
+          - Nation ID
+          - Country Key
+        description: Foreign key referencing the nation where the supplier is located.
+        expr: s_nationkey
+        data_type: INT
+        sample_values:
+          - '7'
+          - '18'
+          - '16'
+      - name: s_phone
+        synonyms:
+          - Supplier Phone
+          - Contact Number
+        description: Phone number of the supplier, formatted with country and area
+          code.
+        expr: s_phone
+        data_type: CHAR
+        sample_values:
+          - 34-731-543-8809
+          - 21-431-835-1909
+          - 21-892-663-2701
+      - name: s_comment
+        synonyms:
+          - Supplier Comment
+          - Notes
+        description: Free-text comments about the supplier, often including notes
+          on performance or behavior.
+        expr: s_comment
+        data_type: VARCHAR
+        sample_values:
+          - ' furiously unusual instruction'
+          - g the regular requests nag furiously fluffily express deposi
+          - r dependencies. furiously
+    facts:
+      - name: s_acctbal
+        synonyms:
+          - Account Balance
+          - Supplier Balance
+        description: Current account balance for the supplier; positive values indicate
+          credit, negative values indicate debt.
+        expr: s_acctbal
+        data_type: DECIMAL
+        sample_values:
+          - '1644.77'
+          - '106.61'
+          - '-546.07'
+    metrics:
+      - name: average_supplier_account_balance
+        synonyms:
+          - Avg Supplier Balance
+          - Mean Supplier Account Balance
+        description: Measures the average financial balance across all suppliers,
+          indicating overall payment posture or exposure.
+        expr: SUM(s_acctbal)
+      - name: number_of_suppliers
+        synonyms:
+          - Supplier Count
+          - Total Suppliers
+        description: Counts the total number of unique suppliers in the system, used
+          to assess supplier base size.
+        expr: SUM(s_suppkey)
+  - name: NATION
+    description: Dimension table containing nation-related attributes used for geographical
+      analysis in supply chain and regional reporting contexts.
+    base_table:
+      database: CLICKZETTA_SAMPLE_DATA
+      schema: TPCH_100G
+      table: NATION
+    filters:
+      - name: n_nationkey_include_values
+        synonyms:
+          - Include specific nation keys
+        description: Filter to include specific nations by their numeric keys, useful
+          for limiting analysis to a predefined set of countries.
+        expr: n_nationkey IN (0, 1, 2)
+      - name: n_name_include_values
+        synonyms:
+          - Include specific country names
+        description: Filter to include only selected nations by their names, commonly
+          used to focus reports on particular countries.
+        expr: n_name IN ('ALGERIA', 'ARGENTINA', 'BRAZIL')
+      - name: n_regionkey_include_values
+        synonyms:
+          - Include specific region keys
+        description: Limits results to nations belonging to specified region keys,
+          supporting regional segmentation in queries.
+        expr: n_regionkey IN (1, 4, 3)
+      - name: n_comment_include_values
+        synonyms:
+          - Include specific comment values
+        description: Restricts data to records where the nation comment matches specific
+          text values, typically used for scenario-based filtering.
+        expr: n_comment IN (' haggle. carefully final deposits detect slyly agai',
+          'al foxes promise slyly according to the regular accounts. bold requests
+          alon', 'y alongside of the pending deposits. carefully special packages
+          are about the ironic forges. slyly special ')
+    dimensions:
+      - name: n_nationkey
+        synonyms:
+          - Nation ID
+          - Nation key
+        description: Unique identifier for each nation, used to join with other tables
+          such as supplier or customer dimensions.
+        expr: n_nationkey
+        data_type: INT
+        sample_values:
+          - '0'
+          - '1'
+          - '2'
+      - name: n_name
+        synonyms:
+          - Country
+          - Nation name
+        description: Name of the nation, representing the country in textual form
+          for reporting and filtering purposes.
+        expr: n_name
+        data_type: CHAR
+        sample_values:
+          - ALGERIA
+          - ARGENTINA
+          - BRAZIL
+      - name: n_regionkey
+        synonyms:
+          - Region ID
+          - Region key
+        description: Foreign key referencing the region to which the nation belongs,
+          enabling regional grouping and analysis.
+        expr: n_regionkey
+        data_type: INT
+        sample_values:
+          - '1'
+          - '4'
+          - '3'
+      - name: n_comment
+        synonyms:
+          - Notes
+          - Nation comment
+        description: Descriptive comments about the nation, often containing narrative
+          details related to economic or logistical characteristics.
+        expr: n_comment
+        data_type: VARCHAR
+        sample_values:
+          - ' haggle. carefully final deposits detect slyly agai'
+          - al foxes promise slyly according to the regular accounts. bold requests
+            alon
+          - 'y alongside of the pending deposits. carefully special packages are about
+            the ironic forges. slyly special '
+    metrics:
+      - name: number_of_nations
+        synonyms:
+          - Nation count
+        description: Count of distinct nations, useful for measuring geographical
+          coverage in supply chain or market analysis.
+        expr: SUM(n_nationkey)
+  - name: LINEITEM
+    description: Line item details for orders, capturing individual items within orders
+      including pricing, quantities, and shipping information
+    base_table:
+      database: CLICKZETTA_SAMPLE_DATA
+      schema: TPCH_100G
+      table: LINEITEM
+    filters:
+      - name: l_orderkey_include_values
+        synonyms:
+          - Include specific orders
+          - Filter by selected order keys
+        description: Filters line items belonging to a specific set of sample orders
+        expr: l_orderkey IN (430276614, 522197027, 552910981)
+      - name: l_partkey_include_values
+        synonyms:
+          - Include specific parts
+          - Filter by selected part keys
+        description: Filters line items involving specific example parts
+        expr: l_partkey IN (15207609, 19020980, 784208)
+      - name: l_suppkey_include_values
+        synonyms:
+          - Include specific suppliers
+          - Filter by selected supplier keys
+        description: Filters line items from specific sample suppliers
+        expr: l_suppkey IN (972643, 73578, 280020)
+      - name: l_linenumber_include_values
+        synonyms:
+          - Include specific line numbers
+          - Filter by item sequence
+        description: Filters line items with specific line numbers
+        expr: l_linenumber IN (7, 1, 4)
+      - name: l_quantity_include_values
+        synonyms:
+          - Filter by quantity values
+          - Match specific order sizes
+        description: Filters line items with exact matching quantities
+        expr: l_quantity IN (9.0, 37.0, 18.0)
+      - name: l_extendedprice_include_values
+        synonyms:
+          - Filter by gross line amount
+          - Match specific pre-discount totals
+        description: Filters line items with specific extended price amounts
+        expr: l_extendedprice IN (8399.0, 29229.76, 14055.21)
+      - name: l_discount_include_values
+        synonyms:
+          - Filter by discount rate
+          - Match specific discount percentages
+        description: Filters line items with specific discount rates
+        expr: l_discount IN (0.06, 0.07, 0.02)
+      - name: l_tax_include_values
+        synonyms:
+          - Filter by tax rate
+          - Match specific tax percentages
+        description: Filters line items with specific tax rates
+        expr: l_tax IN (0.06, 0.07, 0.02)
+      - name: l_returnflag_include_values
+        synonyms:
+          - Filter by return status
+          - Include specific return flags
+        description: 'Filters line items based on return status: none, returned, or
+          nothing'
+        expr: l_returnflag IN ('A', 'R', 'N')
+      - name: l_linestatus_include_values
+        synonyms:
+          - Filter by line status
+          - Include specific shipment states
+        description: 'Filters line items by shipment status: fully shipped or order
+          in progress'
+        expr: l_linestatus IN ('F', 'O')
+      - name: l_shipdate_last_30_days
+        synonyms:
+          - Recent shipments
+          - Last 30-day ship dates
+        description: Includes only line items shipped within the last 30 days
+        expr: l_shipdate >= DATEADD('day', -30, CURRENT_DATE())
+      - name: l_shipdate_include_values
+        synonyms:
+          - Filter by ship dates
+          - Include specific shipping days
+        description: Filters line items shipped on specific sample dates
+        expr: l_shipdate IN ('1992-01-04', '1995-09-13', '1992-01-11')
+      - name: l_commitdate_last_30_days
+        synonyms:
+          - Recent commit dates
+          - Last 30-day commitments
+        description: Includes only line items where supplier commitment occurred in
+          the last 30 days
+        expr: l_commitdate >= DATEADD('day', -30, CURRENT_DATE())
+      - name: l_commitdate_include_values
+        synonyms:
+          - Filter by commit dates
+          - Include specific commitment days
+        description: Filters line items with specific supplier commitment dates
+        expr: l_commitdate IN ('1995-11-22', '1995-10-13', '1995-09-26')
+      - name: l_receiptdate_last_30_days
+        synonyms:
+          - Recent receipts
+          - Last 30-day delivery dates
+        description: Includes only line items received within the last 30 days
+        expr: l_receiptdate >= DATEADD('day', -30, CURRENT_DATE())
+      - name: l_receiptdate_include_values
+        synonyms:
+          - Filter by receipt dates
+          - Include specific delivery days
+        description: Filters line items received on specific sample dates
+        expr: l_receiptdate IN ('1995-10-13', '1995-09-26', '1992-01-04')
+      - name: l_shipinstruct_include_values
+        synonyms:
+          - Filter by shipping instructions
+          - Include specific delivery methods
+        description: Filters line items with specific shipping instructions
+        expr: l_shipinstruct IN ('DELIVER IN PERSON', 'COLLECT COD', 'TAKE BACK RETURN')
+      - name: l_shipmode_include_values
+        synonyms:
+          - Filter by ship mode
+          - Include specific transport types
+        description: Filters line items by transportation method
+        expr: l_shipmode IN ('MAIL', 'AIR', 'SHIP')
+      - name: l_comment_include_values
+        synonyms:
+          - Filter by comment text
+          - Include specific comment samples
+        description: Filters line items containing specific comment snippets
+        expr: l_comment IN (' regular, silen', ', regular reque', 'jole at the slyly
+          pend')
+    dimensions:
+      - name: l_orderkey
+        synonyms:
+          - Order ID
+          - Order key
+        description: Foreign key referencing the associated order
+        expr: l_orderkey
+        data_type: INT
+        sample_values:
+          - '430276614'
+          - '522197027'
+          - '552910981'
+      - name: l_partkey
+        synonyms:
+          - Part ID
+          - Product key
+        description: Foreign key identifying the part or product in the line item
+        expr: l_partkey
+        data_type: INT
+        sample_values:
+          - '15207609'
+          - '19020980'
+          - '784208'
+      - name: l_suppkey
+        synonyms:
+          - Supplier ID
+          - Supplier key
+        description: Foreign key indicating the supplier of the part
+        expr: l_suppkey
+        data_type: INT
+        sample_values:
+          - '972643'
+          - '73578'
+          - '280020'
+      - name: l_returnflag
+        synonyms:
+          - Return status
+          - Return flag
+        description: Indicates whether the line item has been returned (A = none,
+          R = returned, N = nothing)
+        expr: l_returnflag
+        data_type: CHAR
+        sample_values:
+          - A
+          - R
+          - N
+      - name: l_linestatus
+        synonyms:
+          - Line status
+          - Shipment status
+        description: Current status of the line item shipment (F = fully shipped,
+          O = order in progress)
+        expr: l_linestatus
+        data_type: CHAR
+        sample_values:
+          - F
+          - O
+      - name: l_shipinstruct
+        synonyms:
+          - Shipping instructions
+          - Ship instructions
+        description: Instructions for shipping the item
+        expr: l_shipinstruct
+        data_type: CHAR
+        sample_values:
+          - DELIVER IN PERSON
+          - COLLECT COD
+          - TAKE BACK RETURN
+      - name: l_shipmode
+        synonyms:
+          - Shipping mode
+          - Transport method
+        description: Method used to ship the item
+        expr: l_shipmode
+        data_type: CHAR
+        sample_values:
+          - MAIL
+          - AIR
+          - SHIP
+      - name: l_comment
+        synonyms:
+          - '  '
+        description: Free-text comments related to the line item
+        expr: l_comment
+        data_type: VARCHAR
+        sample_values:
+          - ' regular, silen'
+          - ', regular reque'
+          - jole at the slyly pend
+    time_dimensions:
+      - name: l_shipdate
+        synonyms:
+          - Ship date
+          - Shipping date
+        description: Date when the line item was shipped
+        expr: l_shipdate
+        data_type: DATE
+        sample_values:
+          - '1992-01-04'
+          - '1995-09-13'
+          - '1992-01-11'
+      - name: l_commitdate
+        synonyms:
+          - Commit date
+          - Commitment date
+        description: Date when the supplier committed to ship the item
+        expr: l_commitdate
+        data_type: DATE
+        sample_values:
+          - '1995-11-22'
+          - '1995-10-13'
+          - '1995-09-26'
+      - name: l_receiptdate
+        synonyms:
+          - Receipt date
+          - Delivery date
+        description: Date when the item was received by the customer
+        expr: l_receiptdate
+        data_type: DATE
+        sample_values:
+          - '1995-10-13'
+          - '1995-09-26'
+          - '1992-01-04'
+    facts:
+      - name: l_linenumber
+        synonyms:
+          - Line number
+          - Item sequence
+        description: Sequential number identifying the position of the line item within
+          an order
+        expr: l_linenumber
+        data_type: INT
+        sample_values:
+          - '7'
+          - '1'
+          - '4'
+      - name: l_quantity
+        synonyms:
+          - Quantity ordered
+          - Order quantity
+        description: Number of units ordered for this line item
+        expr: l_quantity
+        data_type: DECIMAL
+        sample_values:
+          - '9.00'
+          - '37.00'
+          - '18.00'
+      - name: l_extendedprice
+        synonyms:
+          - Extended price
+          - Gross line amount
+        description: Total price before discounts and taxes, calculated as quantity
+          multiplied by unit price
+        expr: l_extendedprice
+        data_type: DECIMAL
+        sample_values:
+          - '8399.00'
+          - '29229.76'
+          - '14055.21'
+      - name: l_discount
+        synonyms:
+          - Discount rate
+          - Discount percent
+        description: Discount rate applied to the extended price, expressed as a decimal
+        expr: l_discount
+        data_type: DECIMAL
+        sample_values:
+          - '0.06'
+          - '0.07'
+          - '0.02'
+      - name: l_tax
+        synonyms:
+          - Tax rate
+          - Sales tax
+        description: Tax rate applied to the discounted price, expressed as a decimal
+        expr: l_tax
+        data_type: DECIMAL
+        sample_values:
+          - '0.06'
+          - '0.07'
+          - '0.02'
+    metrics:
+      - name: net_line_revenue
+        synonyms:
+          - Net sales per line
+          - Discounted line amount
+        description: Revenue after discount per line item, calculated as extended
+          price multiplied by (1 - discount rate). Measures actual sale value before
+          tax.
+        expr: SUM(l_extendedprice)
+      - name: total_line_cost_with_tax
+        synonyms:
+          - Total line amount
+          - Final line cost
+        description: Final cost of the line item including tax, calculated as net
+          revenue times (1 + tax rate). Represents total charge per line.
+        expr: SUM(l_extendedprice)
+  - name: CUSTOMER
+    description: Customer dimension table containing customer details such as account
+      balance, contact information, and market segment
+    base_table:
+      database: CLICKZETTA_SAMPLE_DATA
+      schema: TPCH_100G
+      table: CUSTOMER
+    filters:
+      - name: c_custkey_include_values
+        synonyms:
+          - Include Specific Customers
+          - Selected Customer IDs
+        description: Filter to include specific customers by their unique customer
+          keys
+        expr: c_custkey IN (22738, 112271, 257237)
+      - name: c_name_include_values
+        synonyms:
+          - Include by Name
+          - Selected Customer Names
+        description: Filter to include specific customers by name
+        expr: c_name IN ('Customer#000104885', 'Customer#000072527', 'Customer#000015412')
+      - name: c_address_include_values
+        synonyms:
+          - Include by Address
+          - Selected Addresses
+        description: Filter to include customers based on exact address matches
+        expr: c_address IN ('mS5HJUe8TXlkZUSd6cspxIIHUU 9o', 'LdqCWYGelFJOS3IceJPjojcmV2TOTp27ZZl2',
+          'MKn1oRq,2gyTws1pDr,BD69Mr3DEd6iQhJF1')
+      - name: c_nationkey_include_values
+        synonyms:
+          - Include by Nation
+          - Selected Country Keys
+        description: Filter to include customers from specific nations using nation
+          keys
+        expr: c_nationkey IN (16, 10, 12)
+      - name: c_phone_include_values
+        synonyms:
+          - Include by Phone
+          - Selected Phone Numbers
+        description: Filter to include customers by specific phone numbers
+        expr: c_phone IN ('31-823-131-4781', '21-892-663-2701', '21-676-275-4564')
+      - name: c_acctbal_include_values
+        synonyms:
+          - Include by Balance
+          - Selected Account Balances
+        description: Filter to include customers with specific account balances
+        expr: c_acctbal IN (-218.23, 8676.1, 2854.03)
+      - name: c_mktsegment_include_values
+        synonyms:
+          - Include by Segment
+          - Selected Market Segments
+        description: Filter to include customers from specific market segments
+        expr: c_mktsegment IN ('HOUSEHOLD', 'FURNITURE', 'AUTOMOBILE')
+      - name: c_comment_include_values
+        synonyms:
+          - Include by Comment
+          - Selected Comment Filters
+        description: Filter to include customers whose comments match specific text
+          snippets
+        expr: c_comment IN ('ending deposits sleep furiously. express deposits dazzle
+          bli', 'ng the slyly pending packages. carefully even sheaves aga', 'ickly
+          ironic packages affix ironically pending, ruthless theodolites. blithely
+          quiet dep')
+    dimensions:
+      - name: c_custkey
+        synonyms:
+          - Customer ID
+          - Customer Key
+        description: Unique identifier for each customer
+        expr: c_custkey
+        data_type: INT
+        sample_values:
+          - '22738'
+          - '112271'
+          - '257237'
+      - name: c_name
+        synonyms:
+          - Customer Name
+        description: Name of the customer
+        expr: c_name
+        data_type: VARCHAR
+        sample_values:
+          - Customer#000104885
+          - Customer#000072527
+          - Customer#000015412
+      - name: c_address
+        synonyms:
+          - Address
+        description: Street address of the customer
+        expr: c_address
+        data_type: VARCHAR
+        sample_values:
+          - mS5HJUe8TXlkZUSd6cspxIIHUU 9o
+          - LdqCWYGelFJOS3IceJPjojcmV2TOTp27ZZl2
+          - MKn1oRq,2gyTws1pDr,BD69Mr3DEd6iQhJF1
+      - name: c_nationkey
+        synonyms:
+          - Nation ID
+          - Country Key
+        description: Foreign key referencing the nation to which the customer belongs
+        expr: c_nationkey
+        data_type: INT
+        sample_values:
+          - '16'
+          - '10'
+          - '12'
+      - name: c_phone
+        synonyms:
+          - Phone
+          - Contact Number
+        description: Phone number of the customer in country-code format
+        expr: c_phone
+        data_type: VARCHAR
+        sample_values:
+          - 31-823-131-4781
+          - 21-892-663-2701
+          - 21-676-275-4564
+      - name: c_mktsegment
+        synonyms:
+          - Market Segment
+          - Customer Segment
+        description: Market segment to which the customer belongs
+        expr: c_mktsegment
+        data_type: VARCHAR
+        sample_values:
+          - HOUSEHOLD
+          - FURNITURE
+          - AUTOMOBILE
+      - name: c_comment
+        synonyms:
+          - Comment
+          - Notes
+        description: Free-form comment field with additional notes about the customer
+        expr: c_comment
+        data_type: VARCHAR
+        sample_values:
+          - ending deposits sleep furiously. express deposits dazzle bli
+          - ng the slyly pending packages. carefully even sheaves aga
+          - ickly ironic packages affix ironically pending, ruthless theodolites.
+            blithely quiet dep
+    facts:
+      - name: c_acctbal
+        synonyms:
+          - Account Balance
+          - Customer Balance
+        description: Account balance representing the available funds or debt for
+          the customer
+        expr: c_acctbal
+        data_type: DECIMAL
+        sample_values:
+          - '-218.23'
+          - '8676.10'
+          - '2854.03'
+    metrics:
+      - name: average_customer_account_balance
+        synonyms:
+          - Avg Account Balance
+          - Mean Customer Balance
+        description: Measures the average balance across all customer accounts, indicating
+          overall customer financial health or exposure.
+        expr: SUM(c_acctbal)
+      - name: customer_count_by_market_segment
+        synonyms:
+          - Customer count by market segment
+        description: Counts the number of unique customers within each market segment
+          to support market analysis and targeting strategies.
+        expr: SUM(c_custkey)
+  - name: PART
+    description: Dimension table containing detailed attributes of parts available
+      in the supply chain, used to describe part characteristics and pricing.
+    base_table:
+      database: CLICKZETTA_SAMPLE_DATA
+      schema: TPCH_100G
+      table: PART
+    filters:
+      - name: p_partkey_include_values
+        synonyms:
+          - Include specific parts
+          - Selected part keys
+        description: Filter to include specific parts by their unique identifiers
+        expr: p_partkey IN (187743, 40445, 157078)
+      - name: p_name_include_values
+        synonyms:
+          - Include specific part names
+          - Selected product names
+        description: Filter to include only parts matching specific full names
+        expr: p_name IN ('wheat white violet rose khaki', 'white cream dark blanched
+          plum', 'snow khaki cornflower lemon purple')
+      - name: p_mfgr_include_values
+        synonyms:
+          - Include specific manufacturers
+          - Selected MFRs
+        description: Filter to include parts from selected manufacturers
+        expr: p_mfgr IN ('Manufacturer#3', 'Manufacturer#1', 'Manufacturer#4')
+      - name: p_brand_include_values
+        synonyms:
+          - Include specific brands
+          - Selected brands
+        description: Filter to include parts from specified brands
+        expr: p_brand IN ('Brand#33', 'Brand#31', 'Brand#12')
+      - name: p_type_include_values
+        synonyms:
+          - Include specific part types
+          - Selected component types
+        description: Filter to include parts of certain categorical types
+        expr: p_type IN ('MEDIUM BURNISHED TIN', 'LARGE ANODIZED NICKEL', 'STANDARD
+          POLISHED COPPER')
+      - name: p_size_include_values
+        synonyms:
+          - Include specific sizes
+          - Selected part dimensions
+        description: Filter to include parts with specific numeric sizes
+        expr: p_size IN (28, 49, 24)
+      - name: p_container_include_values
+        synonyms:
+          - Include specific containers
+          - Selected packaging
+        description: Filter to include parts packaged in specific container types
+        expr: p_container IN ('SM CAN', 'JUMBO BAG', 'JUMBO JAR')
+      - name: p_retailprice_include_values
+        synonyms:
+          - Include specific retail prices
+          - Selected price points
+        description: Filter to include parts within a defined set of retail prices
+        expr: p_retailprice IN (1068.03, 1857.79, 1860.92)
+      - name: p_comment_include_values
+        synonyms:
+          - Include specific comments
+          - Selected notes
+        description: Filter to include parts with specific comment snippets
+        expr: p_comment IN ('ructions.', 'ourts must ar', 'es. furiously')
+    dimensions:
+      - name: p_partkey
+        synonyms:
+          - Part ID
+          - Part key
+        description: Unique identifier for each part in the system
+        expr: p_partkey
+        data_type: INT
+        sample_values:
+          - '187743'
+          - '40445'
+          - '157078'
+      - name: p_name
+        synonyms:
+          - Part name
+          - Product name
+        description: Full name or description of the part, typically composed of color
+          and material descriptors
+        expr: p_name
+        data_type: VARCHAR
+        sample_values:
+          - wheat white violet rose khaki
+          - white cream dark blanched plum
+          - snow khaki cornflower lemon purple
+      - name: p_mfgr
+        synonyms:
+          - Manufacturer
+          - Mfr
+        description: Manufacturer of the part, indicating the producing company or
+          brand
+        expr: p_mfgr
+        data_type: CHAR
+        sample_values:
+          - Manufacturer#3
+          - Manufacturer#1
+          - Manufacturer#4
+      - name: p_brand
+        synonyms:
+          - Brand
+        description: Brand associated with the part, often aligned with manufacturer
+          branding
+        expr: p_brand
+        data_type: CHAR
+        sample_values:
+          - Brand#33
+          - Brand#31
+          - Brand#12
+      - name: p_type
+        synonyms:
+          - Part type
+          - Component type
+        description: Categorical classification of the part based on physical or functional
+          properties
+        expr: p_type
+        data_type: VARCHAR
+        sample_values:
+          - MEDIUM BURNISHED TIN
+          - LARGE ANODIZED NICKEL
+          - STANDARD POLISHED COPPER
+      - name: p_container
+        synonyms:
+          - Container
+          - Packaging type
+        description: Type of packaging or container used for storing and shipping
+          the part
+        expr: p_container
+        data_type: CHAR
+        sample_values:
+          - SM CAN
+          - JUMBO BAG
+          - JUMBO JAR
+      - name: p_comment
+        synonyms:
+          - Part comment
+          - Notes
+        description: Additional textual notes or remarks about the part, often unstructured
+        expr: p_comment
+        data_type: VARCHAR
+        sample_values:
+          - ructions.
+          - ourts must ar
+          - es. furiously
+    facts:
+      - name: p_size
+        synonyms:
+          - Part size
+          - Component size
+        description: Numeric size of the part, representing a physical dimension such
+          as weight or length
+        expr: p_size
+        data_type: INT
+        sample_values:
+          - '28'
+          - '49'
+          - '24'
+      - name: p_retailprice
+        synonyms:
+          - Retail price
+          - Selling price
+        description: Retail price at which the part is sold, reflecting its monetary
+          value
+        expr: p_retailprice
+        data_type: DECIMAL
+        sample_values:
+          - '1068.03'
+          - '1857.79'
+          - '1860.92'
+    metrics:
+      - name: average_part_retail_price
+        synonyms:
+          - Avg part price
+          - Mean retail price
+        description: Measures the average selling price across all parts, useful for
+          pricing analysis and benchmarking.
+        expr: SUM(p_retailprice)
+      - name: part_size_distribution
+        synonyms:
+          - Size range
+          - Component size profile
+        description: Analyzes the spread and frequency of part sizes, supporting inventory
+          and design planning.
+        expr: SUM(p_size)
+  - name: REGION
+    description: Region dimension table that defines geographic regions with unique
+      identifiers, names, and descriptive comments.
+    base_table:
+      database: CLICKZETTA_SAMPLE_DATA
+      schema: TPCH_100G
+      table: REGION
+    filters:
+      - name: r_regionkey_include_values
+        synonyms:
+          - Include major regions
+          - Filter by region key
+        description: 'Limits results to specific region keys: Africa, America, and
+          Asia.'
+        expr: r_regionkey IN (0, 1, 2)
+      - name: r_name_include_values
+        synonyms:
+          - Include top regions
+          - Region name filter
+        description: Filters records to include only the Africa, America, and Asia
+          regions by name.
+        expr: r_name IN ('AFRICA', 'AMERICA', 'ASIA')
+      - name: r_comment_include_values
+        synonyms:
+          - Sample comment filter
+          - Test comment values
+        description: Restricts data to rows with specific sample comments; likely
+          used for testing or debugging.
+        expr: r_comment IN ('lar deposits. blithely final packages cajole. regular
+          waters are final requests. regular accounts are according to ', 'hs use
+          ironic', 'ges. thinly even pinto beans ca')
+    dimensions:
+      - name: r_regionkey
+        synonyms:
+          - Region ID
+          - Region Key
+        description: Unique identifier for each geographic region.
+        expr: r_regionkey
+        data_type: INT
+        sample_values:
+          - '0'
+          - '1'
+          - '2'
+      - name: r_name
+        synonyms:
+          - Region Name
+          - Geographic Region
+        description: Name of the geographic region.
+        expr: r_name
+        data_type: CHAR
+        sample_values:
+          - AFRICA
+          - AMERICA
+          - ASIA
+      - name: r_comment
+        synonyms:
+          - Region Notes
+          - Region Description
+        description: Descriptive comment or notes about the region, often containing
+          narrative text.
+        expr: r_comment
+        data_type: VARCHAR
+        sample_values:
+          - 'lar deposits. blithely final packages cajole. regular waters are final
+            requests. regular accounts are according to '
+          - hs use ironic
+          - ges. thinly even pinto beans ca
+    metrics:
+      - name: region_count
+        synonyms:
+          - Number of regions
+          - Total regions
+        description: Counts the number of distinct regions represented in the data.
+        expr: COUNT(r_regionkey)
+relationships:
+  - name: PARTSUPP_to_SUPPLIER
+    left_table: PARTSUPP
+    right_table: SUPPLIER
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: ps_suppkey
+        right_column: s_suppkey
+  - name: LINEITEM_to_PARTSUPP
+    left_table: LINEITEM
+    right_table: PARTSUPP
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: l_partkey
+        right_column: ps_partkey
+      - left_column: l_suppkey
+        right_column: ps_suppkey
+  - name: PARTSUPP_to_PART
+    left_table: PARTSUPP
+    right_table: PART
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: ps_partkey
+        right_column: p_partkey
+  - name: LINEITEM_to_ORDERS
+    left_table: LINEITEM
+    right_table: ORDERS
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: l_orderkey
+        right_column: o_orderkey
+  - name: ORDERS_to_CUSTOMER
+    left_table: ORDERS
+    right_table: CUSTOMER
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: o_custkey
+        right_column: c_custkey
+  - name: SUPPLIER_to_NATION
+    left_table: SUPPLIER
+    right_table: NATION
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: s_nationkey
+        right_column: n_nationkey
+  - name: LINEITEM_to_SUPPLIER
+    left_table: LINEITEM
+    right_table: SUPPLIER
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: l_suppkey
+        right_column: s_suppkey
+  - name: CUSTOMER_to_NATION
+    left_table: CUSTOMER
+    right_table: NATION
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: c_nationkey
+        right_column: n_nationkey
+  - name: NATION_to_REGION
+    left_table: NATION
+    right_table: REGION
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: n_regionkey
+        right_column: r_regionkey
+  - name: LINEITEM_to_PART
+    left_table: LINEITEM
+    right_table: PART
+    join_type: inner
+    relationship_type: many_to_one
+    relationship_columns:
+      - left_column: l_partkey
+        right_column: p_partkey
