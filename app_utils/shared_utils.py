@@ -129,10 +129,20 @@ def env_setup_popup(missing_env_vars: list[str]) -> None:
     Args:
         missing_env_vars: A list of missing environment variables.
     """
+    if ACTIVE_CONFIG_PATH:
+        config_hint = (
+            f"\n\nThe app read `{ACTIVE_CONFIG_PATH}` but some required fields are missing. "
+            "Update that file or set environment variables before restarting."
+        )
+    else:
+        config_hint = (
+            "\n\nNo ClickZetta connection file was found in the standard locations. "
+            "Mount or create a `connections.json` file so the app can pick up credentials."
+        )
     formatted_missing_env_vars = "\n".join(f"- **{s}**" for s in missing_env_vars)
     st.markdown(
         f"""Oops! It looks like the following required environment variables are missing: \n{formatted_missing_env_vars}\n\n
-Please review the repository README for ClickZetta setup instructions and update your connection configuration accordingly. Restart this app after you've set the required environment variables."""
+Please review the repository README for ClickZetta setup instructions and update your connection configuration accordingly. Restart this app after you've set the required environment variables.{config_hint}"""
     )
     st.stop()
 

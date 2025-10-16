@@ -6,10 +6,19 @@ The ClickZetta Semantic Model Generator is a Streamlit-based companion app that 
 
 - Python 3.11
 - Access to a ClickZetta workspace (service URL, instance, workspace, schema, vcluster, username, password)
-- A `connections.json` file in one of the standard ClickZetta locations (`~/.clickzetta/connections.json`, `config/connections.json`, `config/lakehouse_connection/connections.json`, or `/app/.clickzetta/lakehouse_connection/connections.json`). The structure matches the template from [`mcp-clickzetta-server`](https://github.com/yunqiqiliang/mcp-clickzetta-server/blob/main/config/connections-template.json). Set `"is_default": true` for the connection the app should use.
+- A `connections.json` file in one of the standard ClickZetta locations (`~/.clickzetta/connections.json`, `config/connections.json`, `config/lakehouse_connection/connections.json`, or `/app/.clickzetta/lakehouse_connection/connections.json`). The structure matches the template from [`mcp-clickzetta-server`](https://github.com/yunqiqiliang/mcp-clickzetta-server/blob/main/config/connections-template.json). Set "is_default": true for the connection the app should use.
 
 ```json
 {
+  "system_config": {
+    "embedding": {
+      "provider": "dashscope",
+      "dashscope": {
+        "api_key": "dashscope_api_key",
+        "model": "qwen-plus-latest"
+      }
+    }
+  },
   "connections": [
     {
       "connection_name": "dev",
@@ -28,7 +37,44 @@ The ClickZetta Semantic Model Generator is a Streamlit-based companion app that 
 
 Environment variables such as `CLICKZETTA_SERVICE`, `CLICKZETTA_USERNAME`, etc. override the JSON values when present.
 
-## Installation
+## Installation from Docker
+
+If you prefer not to install Python dependencies locally, pull the published Docker image:
+
+```bash
+docker pull czqiliang/semantic-model-generator:latest
+docker run --rm -p 8501:8501 \
+  -v $(pwd)/connections.json:/app/.clickzetta/connections.json \
+  czqiliang/semantic-model-generator:latest
+```
+
+Mount your `connections.json` (see example below) so the container can pick up ClickZetta and DashScope credentials.
+
+The Streamlit UI will be available at http://localhost:8501.
+
+Docker Compose example (`docker-compose.yml`):
+
+```yaml
+version: "3.9"
+services:
+  app:
+    image: czqiliang/semantic-model-generator:latest
+    ports:
+      - "8501:8501"
+    volumes:
+      - ~/.clickzetta:/app/.clickzetta         # macOS 默认配置挂载
+```
+
+Run it with `docker compose up`.
+
+Linux 主机通常会把 ClickZetta 配置放在 `/opt/clickzetta` 下，Compose 配置可以改成：
+
+```yaml
+    volumes:
+      - /opt/clickzetta:/app/.clickzetta
+```
+
+## or Installation from source code
 
 ```bash
 # optional: conda env using environment.yml
@@ -81,6 +127,8 @@ make setup        # install dependencies
 make run_admin_app
 make fmt_lint     # format + lint
 make test         # execute pytest suite
+make docker-buildx       # build multi-arch Docker image (linux/amd64, linux/arm64)
+make docker-buildx-push  # build and push multi-arch image
 ```
 
 ## License

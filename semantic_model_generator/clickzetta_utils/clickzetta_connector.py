@@ -84,7 +84,7 @@ def _execute_query_to_pandas(connection: Any, query: str) -> pd.DataFrame:
     sessions and legacy connector shims.
     """
 
-    logger.debug("Executing query: {}", query)
+    logger.debug(f"Executing query: {query}")
 
     if hasattr(connection, "sql"):
         return connection.sql(query).to_pandas()

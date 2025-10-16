@@ -50,7 +50,7 @@ def enrich_semantic_model(
     for table in model.tables:
         raw_table = raw_lookup.get(table.name.upper())
         if not raw_table:
-            logger.debug("No raw metadata for table %s; skipping enrichment.", table.name)
+            logger.debug("No raw metadata for table {}; skipping enrichment.", table.name)
             continue
         try:
             payload = _serialize_table_prompt(table, raw_table, model.description, placeholder)
@@ -69,9 +69,9 @@ def enrich_semantic_model(
                 ):
                     model.description = model_description.strip()
         except DashscopeError as exc:  # pragma: no cover - network failures or remote errors
-            logger.warning("DashScope enrichment failed for %s: %s", table.name, exc)
+            logger.warning("DashScope enrichment failed for {}: {}", table.name, exc)
         except Exception as exc:  # pragma: no cover - defensive guard
-            logger.exception("Unexpected error enriching table %s: %s", table.name, exc)
+            logger.exception("Unexpected error enriching table {}: {}", table.name, exc)
     if model.description == placeholder or not model.description.strip():
         _summarize_model_description(model, client, placeholder)
 
@@ -180,7 +180,7 @@ def _parse_llm_response(content: str) -> Optional[Dict[str, object]]:
     try:
         data = json.loads(json_text)
     except json.JSONDecodeError as exc:
-        logger.warning("Unable to parse DashScope response as JSON: %s | raw=%s", exc, content)
+        logger.warning("Unable to parse DashScope response as JSON: {} | raw={}", exc, content)
         return None
     if not isinstance(data, dict):
         return None
@@ -598,4 +598,4 @@ def _summarize_model_description(
         if summary:
             model.description = summary
     except DashscopeError as exc:  # pragma: no cover - defensive
-        logger.warning("Failed to summarize semantic model description: %s", exc)
+        logger.warning("Failed to summarize semantic model description: {}", exc)

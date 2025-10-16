@@ -1,4 +1,17 @@
-.PHONY: run_admin_app
+.PHONY: run_admin_app docker-buildx docker-buildx-push ensure-docker
+
+# Docker image configuration (override via environment variables as needed)
+
+ensure-docker: ## verify docker and buildx are available
+	@command -v docker >/dev/null 2>&1 || (echo "Docker is required for this target" >&2 && exit 1)
+	@docker buildx version >/dev/null 2>&1 || (echo "Docker buildx plugin is required" >&2 && exit 1)
+
+DOCKER_CONTEXT ?= .
+DOCKERFILE ?= Dockerfile
+DOCKER_IMAGE ?= czqiliang/semantic-model-generator
+DOCKER_PLATFORMS ?= linux/amd64,linux/arm64
+DOCKER_TAG ?= latest
+DOCKER_BUILD_EXTRA ?=
 
 install-poetry:
 	curl -sSL https://install.python-poetry.org | python3 -
@@ -79,6 +92,21 @@ build: ## Clean the dist dir and build the whl file
 	rm -rf dist
 	mkdir dist
 	poetry build
+
+docker-buildx: ensure-docker ## Build a multi-architecture Docker image (no push). Override DOCKER_IMAGE/DOCKER_TAG/DOCKER_PLATFORMS/DOCKER_BUILD_EXTRA as needed.
+	docker buildx build $(DOCKER_BUILD_EXTRA) \
+		--platform $(DOCKER_PLATFORMS) \
+		--file $(DOCKERFILE) \
+		--tag $(DOCKER_IMAGE):$(DOCKER_TAG) \
+		$(DOCKER_CONTEXT)
+
+docker-buildx-push: ensure-docker ## Build and push a multi-architecture Docker image. Requires registry login.
+	docker buildx build $(DOCKER_BUILD_EXTRA) \
+		--platform $(DOCKER_PLATFORMS) \
+		--file $(DOCKERFILE) \
+		--tag $(DOCKER_IMAGE):$(DOCKER_TAG) \
+		--push \
+		$(DOCKER_CONTEXT)
 
 help: ## Show this help.
 	@fgrep -h "##" $(MAKEFILE_LIST) | fgrep -v fgrep | sed -e 's/\\$$//' | sed -e 's

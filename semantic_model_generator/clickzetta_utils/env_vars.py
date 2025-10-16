@@ -1,6 +1,7 @@
 import json
 import os
-from typing import Dict, List, Optional, Tuple
+from collections import deque
+from typing import Any, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -67,13 +68,49 @@ if not isinstance(_DASHSCOPE_CONFIG, dict):
     _DASHSCOPE_CONFIG = {}
 
 
+def _deep_lookup(mapping: Any, key: str) -> Optional[Any]:
+    """
+    Recursively searches dictionaries/lists for the first occurrence of ``key`` (case-insensitive).
+    Returns the associated value if it is not empty/None.
+    """
+
+    if not isinstance(mapping, (dict, list)):
+        return None
+
+    normalized_key = key.lower()
+    queue: deque[Any] = deque([mapping])
+    seen: set[int] = set()
+
+    while queue:
+        current = queue.popleft()
+        current_id = id(current)
+        if current_id in seen:
+            continue
+        seen.add(current_id)
+
+        if isinstance(current, dict):
+            for candidate_key, candidate_value in current.items():
+                candidate_key_str = str(candidate_key).lower()
+                if candidate_key_str == normalized_key and candidate_value not in (None, ""):
+                    return candidate_value
+                if isinstance(candidate_value, (dict, list)):
+                    queue.append(candidate_value)
+        elif isinstance(current, list):
+            for item in current:
+                if isinstance(item, (dict, list)):
+                    queue.append(item)
+    return None
+
+
 def _config_value(key: str, default: Optional[str] = None) -> Optional[str]:
     env_value = os.getenv(f"CLICKZETTA_{key.upper()}")
     if env_value:
         return env_value
     if CONFIG_CONNECTION:
         value = CONFIG_CONNECTION.get(key)
-        if value is not None:
+        if value in ("", None):
+            value = _deep_lookup(CONFIG_CONNECTION, key)
+        if value not in ("", None):
             return str(value)
     return default
 

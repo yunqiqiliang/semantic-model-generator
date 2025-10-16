@@ -64,7 +64,7 @@ def table_selector_dialog() -> None:
         try:
             schemas.extend(get_available_schemas(db))
         except ProgrammingError:
-            logger.info("Insufficient permissions to read from database %s, skipping", db)
+            logger.info("Insufficient permissions to read from database {}, skipping", db)
     st.session_state["available_schemas"] = schemas
     st.session_state["selected_schemas"] = [
         schema for schema in st.session_state.get("selected_schemas", []) if schema in schemas
